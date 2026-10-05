@@ -1,0 +1,72 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #202124;
+  background: #f4f1ea;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 20rem;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.pagina-inicial {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: clamp(1rem, 4vw, 3rem);
+}
+
+.cartao {
+  width: min(100%, 42rem);
+  padding: clamp(1.5rem, 5vw, 3.5rem);
+  border: 1px solid #d9d4c8;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 1rem 2.5rem rgb(45 38 24 / 10%);
+}
+
+.rotulo {
+  margin: 0 0 0.75rem;
+  color: #795b18;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 8vw, 3.75rem);
+  line-height: 1.05;
+}
+
+.descricao {
+  max-width: 58ch;
+  margin: 1.5rem 0;
+  color: #585858;
+  font-size: clamp(1rem, 2.5vw, 1.15rem);
+  line-height: 1.6;
+}
+
+.estado {
+  display: inline-flex;
+  margin: 0;
+  padding: 0.65rem 0.9rem;
+  border-radius: 999px;
+  color: #175b36;
+  background: #e1f4e8;
+  font-weight: 700;
+}
+
+@media (max-width: 30rem) {
+  .cartao {
+    border-radius: 0.75rem;
+    box-shadow: none;
+  }
+}
