@@ -9,6 +9,8 @@ O protótipo será implantado como um único processo para reduzir a complexidad
 ## Consequências
 
 - Frontend e backend não serão implantados como serviços independentes no primeiro protótipo.
+- A implementação inicial usará Python e Django, com a interface renderizada no servidor por Django Templates, conforme o [ADR 0007](./0007-python-django-e-templates-no-prototipo.md).
+- HTML, CSS e JavaScript pontual integrarão o mesmo artefato implantável; React, TypeScript ou um frontend separado exigirão uma necessidade futura concreta.
 - Após a instalação, a aplicação deve iniciar com um único comando documentado.
 - Windows é o ambiente operacional principal, mas a aplicação deve permanecer executável em Linux sempre que possível.
 - Docker pode ser oferecido como alternativa futura, mas não será obrigatório para a execução local.
