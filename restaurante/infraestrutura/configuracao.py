@@ -3,8 +3,22 @@
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+DIRETORIO_DADOS = BASE_DIR / ".local" / "dados"
+DIRETORIO_TESTES = BASE_DIR / ".local" / "testes"
+CAMINHO_BANCO = DIRETORIO_DADOS / "restaurante.sqlite3"
+CAMINHO_BANCO_TESTES = DIRETORIO_TESTES / "restaurante-testes.sqlite3"
+
+try:
+    DIRETORIO_DADOS.mkdir(parents=True, exist_ok=True)
+    DIRETORIO_TESTES.mkdir(parents=True, exist_ok=True)
+except OSError as erro:
+    raise ImproperlyConfigured(
+        f"Não foi possível preparar o diretório persistente do SQLite: {erro}"
+    ) from erro
 
 SECRET_KEY = os.environ.get(
     "DJANGO_SECRET_KEY",
@@ -15,6 +29,7 @@ ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "testserver"]
 
 INSTALLED_APPS = [
     "django.contrib.staticfiles",
+    "restaurante.persistencia.apps.PersistenciaConfig",
     "restaurante.interface_web",
 ]
 
@@ -40,7 +55,13 @@ ASGI_APPLICATION = "restaurante.infraestrutura.asgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": CAMINHO_BANCO,
+        "OPTIONS": {
+            "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL",
+        },
+        "TEST": {
+            "NAME": CAMINHO_BANCO_TESTES,
+        },
     }
 }
 
