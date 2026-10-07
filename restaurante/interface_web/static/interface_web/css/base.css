@@ -64,6 +64,60 @@ h1 {
   font-weight: 700;
 }
 
+.aviso {
+  padding: 0.85rem 1rem;
+  border: 1px solid #d49b2f;
+  border-radius: 0.75rem;
+  color: #684500;
+  background: #fff4d6;
+}
+
+.lista-usuarios {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+button {
+  display: flex;
+  width: 100%;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #b9ab8c;
+  border-radius: 0.75rem;
+  color: #202124;
+  background: #fffaf0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: #795b18;
+  background: #fff4d6;
+}
+
+button:focus-visible {
+  outline: 0.2rem solid #3467d6;
+  outline-offset: 0.15rem;
+}
+
+button span:last-child {
+  color: #795b18;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+}
+
+@media (min-width: 48rem) {
+  .lista-usuarios {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 30rem) {
   .cartao {
     border-radius: 0.75rem;

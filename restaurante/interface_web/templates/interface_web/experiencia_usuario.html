@@ -1,0 +1,23 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ titulo }} | Comandas do restaurante</title>
+    <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
+  </head>
+  <body>
+    <main class="pagina-inicial">
+      <section class="cartao" aria-labelledby="titulo-principal">
+        <p class="rotulo">{{ usuario.nome }}</p>
+        <h1 id="titulo-principal">{{ titulo }}</h1>
+        <p class="descricao">{{ descricao }}</p>
+        <form method="post" action="{% url 'trocar_usuario' %}">
+          {% csrf_token %}
+          <button type="submit">Trocar usuário</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

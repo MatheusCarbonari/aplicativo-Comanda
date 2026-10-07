@@ -4,19 +4,36 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Comandas do restaurante</title>
+    <title>Selecionar usuário | Comandas do restaurante</title>
     <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
   </head>
   <body>
     <main class="pagina-inicial">
       <section class="cartao" aria-labelledby="titulo-principal">
-        <p class="rotulo">Protótipo local</p>
-        <h1 id="titulo-principal">Comandas do restaurante</h1>
+        <p class="rotulo">Comandas do restaurante</p>
+        <h1 id="titulo-principal">Selecionar usuário</h1>
         <p class="descricao">
-          A estrutura inicial está pronta. Os fluxos de Garçom e Caixa serão
-          adicionados de forma incremental nos próximos tickets.
+          Escolha quem utilizará a aplicação neste navegador.
         </p>
-        <p class="estado" role="status">Aplicação em funcionamento</p>
+        {% if selecao_invalida %}
+          <p class="aviso" role="alert">
+            Usuário operacional não encontrado. Escolha um usuário disponível.
+          </p>
+        {% endif %}
+        <ul class="lista-usuarios">
+          {% for usuario in usuarios %}
+            <li>
+              <form method="post" action="{% url 'selecionar_usuario' %}">
+                {% csrf_token %}
+                <input type="hidden" name="usuario_id" value="{{ usuario.pk }}">
+                <button type="submit">
+                  <span>{{ usuario.nome }}</span>
+                  <span>{{ usuario.papel }}</span>
+                </button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
       </section>
     </main>
   </body>

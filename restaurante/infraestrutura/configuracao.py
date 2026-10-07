@@ -28,6 +28,7 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "testserver"]
 
 INSTALLED_APPS = [
+    "django.contrib.sessions",
     "django.contrib.staticfiles",
     "restaurante.persistencia.apps.PersistenciaConfig",
     "restaurante.ferramentas_administrativas.apps.FerramentasAdministrativasConfig",
@@ -36,7 +37,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
 ]
 
 ROOT_URLCONF = "restaurante.infraestrutura.urls"

@@ -49,6 +49,18 @@ sobrescreve preços ou papéis alterados, não remove registros extras e pode se
 executado novamente sem produzir duplicatas. Iniciar o Django, importar módulos
 ou executar a migração estrutural não dispara essa carga automaticamente.
 
+## Seleção do usuário operacional
+
+A escolha feita na tela inicial é mantida pela sessão padrão do Django. O
+navegador recebe somente o identificador opaco da sessão; no servidor, a sessão
+guarda o identificador persistido do Usuário operacional. A cada requisição, a
+aplicação busca novamente esse usuário no banco e utiliza o papel armazenado no
+registro para escolher a interface.
+
+Essa seleção serve apenas para o fluxo operacional do protótipo e não representa
+autenticação. Operações futuras deverão carregar e validar novamente o Usuário
+operacional no backend. A ação `Trocar usuário` remove somente essa seleção.
+
 ## Persistência SQLite
 
 O banco operacional fica em `.local/dados/restaurante.sqlite3`, um diretório
