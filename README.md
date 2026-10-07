@@ -29,6 +29,26 @@ A página-base fica disponível em `http://127.0.0.1:8000/`. A exposição contr
 .venv\Scripts\python.exe manage.py test
 ```
 
+## Preparar banco e dados iniciais
+
+Crie ou atualize somente a estrutura do banco:
+
+```powershell
+.venv\Scripts\python.exe manage.py migrate
+```
+
+Depois, execute explicitamente a carga de demonstração:
+
+```powershell
+.venv\Scripts\python.exe manage.py carregar_dados_iniciais
+```
+
+O comando procura cada Comanda física pelo identificador e cada Produto ou
+Usuário operacional pelo nome. Ele cria somente os registros ausentes: não
+sobrescreve preços ou papéis alterados, não remove registros extras e pode ser
+executado novamente sem produzir duplicatas. Iniciar o Django, importar módulos
+ou executar a migração estrutural não dispara essa carga automaticamente.
+
 ## Persistência SQLite
 
 O banco operacional fica em `.local/dados/restaurante.sqlite3`, um diretório
@@ -53,9 +73,9 @@ O projeto mantém um único processo implantável. As responsabilidades serão s
 | --- | --- |
 | Domínio | Ainda não criada; este ticket não possui regras de negócio. |
 | Aplicação/casos de uso | Ainda não criada; será adicionada com o primeiro caso de uso. |
-| Persistência | Configuração concreta e verificável do SQLite em `persistencia`; ainda não existem modelos do domínio. |
+| Persistência | Configuração concreta do SQLite e modelos persistidos em `persistencia`. |
 | Interface web | Páginas, rotas, templates e recursos estáticos em `interface_web`. |
-| Ferramentas administrativas | Entrada versionada pelo `manage.py`; comandos próprios serão adicionados somente quando necessários. |
+| Ferramentas administrativas | Entrada pelo `manage.py` e comando explícito `carregar_dados_iniciais`. |
 | Infraestrutura | Configuração e entradas ASGI/WSGI em `infraestrutura`. |
 
 Essa ausência intencional de pacotes vazios evita antecipar abstrações. Cada área ganhará código quando um ticket introduzir uma responsabilidade real.

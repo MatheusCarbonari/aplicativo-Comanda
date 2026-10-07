@@ -30,6 +30,7 @@ ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "testserver"]
 INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "restaurante.persistencia.apps.PersistenciaConfig",
+    "restaurante.ferramentas_administrativas.apps.FerramentasAdministrativasConfig",
     "restaurante.interface_web",
 ]
 
@@ -71,3 +72,4 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
