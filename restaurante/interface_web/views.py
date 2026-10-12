@@ -1,10 +1,16 @@
 """Páginas renderizadas pela interface web."""
 
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
+from restaurante.aplicacao.consultar_estado_comanda import (
+    EstadoComanda,
+    PapelNaoPermitido,
+    UsuarioOperacionalInvalido,
+    consultar_estado_comanda,
+)
 from restaurante.persistencia.models import UsuarioOperacional
 
 
@@ -61,6 +67,35 @@ def selecionar_usuario(request: HttpRequest) -> HttpResponse:
 def trocar_usuario(request: HttpRequest) -> HttpResponse:
     request.session.pop(CHAVE_USUARIO_OPERACIONAL, None)
     return redirect("pagina_inicial")
+
+
+@require_GET
+def consultar_comanda(request: HttpRequest) -> HttpResponse:
+    try:
+        resultado = consultar_estado_comanda(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL),
+            request.GET.get("identificador", ""),
+        )
+    except UsuarioOperacionalInvalido:
+        return _redirecionar_selecao_invalida(request)
+    except PapelNaoPermitido:
+        return HttpResponseForbidden("Usuário operacional sem permissão.")
+
+    mensagens = {
+        EstadoComanda.DISPONIVEL: (
+            "Comanda disponível — nenhum atendimento aberto"
+        ),
+        EstadoComanda.EM_ATENDIMENTO: "Em atendimento",
+        EstadoComanda.NAO_ENCONTRADA: "Comanda não encontrada",
+    }
+    return render(
+        request,
+        "interface_web/consulta_comanda.html",
+        {
+            "identificador": resultado.identificador,
+            "mensagem": mensagens[resultado.estado],
+        },
+    )
 
 
 def experiencia_garcom(request: HttpRequest) -> HttpResponse:

@@ -1,0 +1,28 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Consulta de comanda | Comandas do restaurante</title>
+    <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
+  </head>
+  <body>
+    <main class="pagina-inicial">
+      <section class="cartao" aria-labelledby="titulo-principal">
+        <p class="rotulo">Consulta de comanda</p>
+        {% if identificador %}
+          <h1 id="titulo-principal">Comanda {{ identificador }}</h1>
+        {% else %}
+          <h1 id="titulo-principal">Resultado da consulta</h1>
+        {% endif %}
+        <p class="estado-comanda" role="status">{{ mensagem }}</p>
+        {% include "interface_web/formulario_consulta_comanda.html" %}
+        <form method="post" action="{% url 'trocar_usuario' %}">
+          {% csrf_token %}
+          <button type="submit">Trocar usuário</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

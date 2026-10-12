@@ -112,6 +112,38 @@ button span:last-child {
   letter-spacing: 0.06em;
 }
 
+.formulario-consulta {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.formulario-consulta label {
+  font-weight: 700;
+}
+
+.formulario-consulta input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #b9ab8c;
+  border-radius: 0.75rem;
+  font: inherit;
+}
+
+.formulario-consulta input:focus-visible {
+  outline: 0.2rem solid #3467d6;
+  outline-offset: 0.15rem;
+}
+
+.estado-comanda {
+  padding: 1rem;
+  border-radius: 0.75rem;
+  color: #175b36;
+  background: #e1f4e8;
+  font-weight: 700;
+}
+
 @media (min-width: 48rem) {
   .lista-usuarios {
     grid-template-columns: repeat(2, minmax(0, 1fr));

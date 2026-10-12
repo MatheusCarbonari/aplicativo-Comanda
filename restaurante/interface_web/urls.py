@@ -3,6 +3,7 @@
 from django.urls import path
 
 from .views import (
+    consultar_comanda,
     experiencia_caixa,
     experiencia_garcom,
     pagina_inicial,
@@ -15,6 +16,7 @@ urlpatterns = [
     path("", pagina_inicial, name="pagina_inicial"),
     path("usuarios/selecionar/", selecionar_usuario, name="selecionar_usuario"),
     path("usuarios/trocar/", trocar_usuario, name="trocar_usuario"),
+    path("comandas/consultar/", consultar_comanda, name="consultar_comanda"),
     path("garcom/", experiencia_garcom, name="experiencia_garcom"),
     path("caixa/", experiencia_caixa, name="experiencia_caixa"),
 ]

@@ -1,6 +1,10 @@
 from django.test import TestCase
 
-from restaurante.persistencia.models import UsuarioOperacional
+from restaurante.persistencia.models import (
+    Atendimento,
+    ComandaFisica,
+    UsuarioOperacional,
+)
 
 
 class FluxoUsuarioOperacionalTests(TestCase):
@@ -44,6 +48,7 @@ class FluxoUsuarioOperacionalTests(TestCase):
         self.assertEqual(experiencia.status_code, 200)
         self.assertContains(experiencia, "Experiência do Garçom")
         self.assertContains(experiencia, "Garçom 1")
+        self.assertContains(experiencia, "Identificador da comanda")
 
     def test_selecionar_caixa_usa_papel_armazenado_no_backend(self):
         resposta = self.client.post(
@@ -60,6 +65,7 @@ class FluxoUsuarioOperacionalTests(TestCase):
         self.assertEqual(experiencia.status_code, 200)
         self.assertContains(experiencia, "Experiência do Caixa")
         self.assertContains(experiencia, "Caixa 1")
+        self.assertContains(experiencia, "Identificador da comanda")
 
         rota_de_outro_papel = self.client.get("/garcom/")
         self.assertRedirects(
@@ -119,3 +125,79 @@ class FluxoUsuarioOperacionalTests(TestCase):
         self.assertContains(resposta, "Usuário operacional não encontrado")
         self.assertContains(resposta, "Selecionar usuário")
         self.assertEqual(self.client.get("/").status_code, 200)
+
+
+class ConsultaComandaInterfaceTests(TestCase):
+    def selecionar(self, usuario: UsuarioOperacional) -> None:
+        self.client.post(
+            "/usuarios/selecionar/",
+            {"usuario_id": usuario.pk},
+        )
+
+    def test_garcom_consulta_comanda_disponivel_sem_criar_atendimento(self):
+        usuario = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        ComandaFisica.objects.create(identificador="001")
+        self.selecionar(usuario)
+
+        resposta = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Comanda 001")
+        self.assertContains(
+            resposta,
+            "Comanda disponível — nenhum atendimento aberto",
+        )
+        self.assertEqual(Atendimento.objects.count(), 0)
+
+    def test_caixa_consulta_comanda_em_atendimento(self):
+        usuario = UsuarioOperacional.objects.create(
+            nome="Caixa 1",
+            papel=UsuarioOperacional.Papel.CAIXA,
+        )
+        comanda = ComandaFisica.objects.create(identificador="002")
+        Atendimento.objects.create(comanda=comanda)
+        self.selecionar(usuario)
+
+        resposta = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "002"},
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Comanda 002")
+        self.assertContains(resposta, "Em atendimento")
+
+    def test_comanda_desconhecida_nao_e_criada(self):
+        usuario = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        self.selecionar(usuario)
+
+        resposta = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "999"},
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Comanda não encontrada")
+        self.assertEqual(ComandaFisica.objects.count(), 0)
+        self.assertEqual(Atendimento.objects.count(), 0)
+
+    def test_consulta_sem_usuario_retorna_a_selecao(self):
+        resposta = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.assertRedirects(
+            resposta,
+            "/?selecao_invalida=1",
+            fetch_redirect_response=False,
+        )

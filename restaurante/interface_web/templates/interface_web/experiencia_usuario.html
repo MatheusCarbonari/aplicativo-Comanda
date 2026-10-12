@@ -13,6 +13,7 @@
         <p class="rotulo">{{ usuario.nome }}</p>
         <h1 id="titulo-principal">{{ titulo }}</h1>
         <p class="descricao">{{ descricao }}</p>
+        {% include "interface_web/formulario_consulta_comanda.html" %}
         <form method="post" action="{% url 'trocar_usuario' %}">
           {% csrf_token %}
           <button type="submit">Trocar usuário</button>

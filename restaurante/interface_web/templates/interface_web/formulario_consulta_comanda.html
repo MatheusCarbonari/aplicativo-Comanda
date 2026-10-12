@@ -1,0 +1,11 @@
+<form class="formulario-consulta" method="get" action="{% url 'consultar_comanda' %}">
+  <label for="identificador-comanda">Identificador da comanda</label>
+  <input
+    id="identificador-comanda"
+    name="identificador"
+    value="{{ identificador|default:'' }}"
+    autocomplete="off"
+    required
+  >
+  <button type="submit">Consultar</button>
+</form>

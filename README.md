@@ -69,6 +69,17 @@ Essa seleção serve apenas para o fluxo operacional do protótipo e não repres
 autenticação. Operações futuras deverão carregar e validar novamente o Usuário
 operacional no backend. A ação `Trocar usuário` remove somente essa seleção.
 
+## Consultar uma comanda
+
+Garçom e Caixa podem consultar uma Comanda física pelo identificador textual na
+própria experiência operacional. A consulta usa GET, preserva zeros à esquerda e
+somente informa se a Comanda está disponível, em atendimento ou não existe. Ela
+não cria Comanda, Atendimento ou qualquer outro registro.
+
+O modelo Atendimento representa somente os estados `ABERTO` e `ENCERRADO` nesta
+etapa. Uma restrição condicional no SQLite permite vários atendimentos encerrados,
+mas impede mais de um Atendimento aberto para a mesma Comanda física.
+
 ## Persistência SQLite
 
 O banco operacional fica em `.local/dados/restaurante.sqlite3`, um diretório
@@ -92,8 +103,8 @@ O projeto mantém um único processo implantável. As responsabilidades serão s
 | Área | Representação atual |
 | --- | --- |
 | Domínio | Ainda não criada; este ticket não possui regras de negócio. |
-| Aplicação/casos de uso | Ainda não criada; será adicionada com o primeiro caso de uso. |
-| Persistência | Configuração concreta do SQLite e modelos persistidos em `persistencia`. |
+| Aplicação/casos de uso | Consulta do estado da Comanda física em `aplicacao`. |
+| Persistência | Configuração do SQLite e modelos persistidos, incluindo Atendimento, em `persistencia`. |
 | Interface web | Páginas, rotas, templates e recursos estáticos em `interface_web`. |
 | Ferramentas administrativas | Entrada pelo `manage.py` e comando explícito `carregar_dados_iniciais`. |
 | Infraestrutura | Configuração e entradas ASGI/WSGI em `infraestrutura`. |
