@@ -23,6 +23,14 @@ Depois de instalar as dependências:
 
 A página-base fica disponível em `http://127.0.0.1:8000/`. A exposição controlada à rede local será tratada em um ticket posterior.
 
+## Saúde do backend
+
+O endpoint técnico `GET /saude/` verifica se o processo Django responde e se a
+conexão com o banco executa uma consulta somente leitura `SELECT 1`. Uma resposta
+saudável retorna HTTP 200 com `{"status": "ok"}`. Se a verificação da
+persistência falhar, retorna HTTP 503 com `{"status": "indisponivel"}`, sem
+detalhes internos. O endpoint não depende de sessão ou Usuário operacional.
+
 ## Testar
 
 ```powershell
