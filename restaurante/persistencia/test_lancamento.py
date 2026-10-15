@@ -34,6 +34,7 @@ class LancamentoPersistenciaTests(TestCase):
             "001",
             self.produto.pk,
             2,
+            "persistencia-primeiro",
         )
 
         lancamento = Lancamento.objects.get(pk=resultado.lancamento_id)
@@ -70,6 +71,7 @@ class LancamentoPersistenciaTests(TestCase):
                     "001",
                     self.produto.pk,
                     1,
+                    "rollback-atendimento",
                 )
 
         self.assertEqual(Atendimento.objects.count(), 0)
@@ -91,6 +93,7 @@ class LancamentoPersistenciaTests(TestCase):
                     "001",
                     self.produto.pk,
                     1,
+                    "integridade-lancamento",
                 )
 
         self.assertEqual(Atendimento.objects.count(), 0)
@@ -108,12 +111,14 @@ class LancamentoPersistenciaTests(TestCase):
             "001",
             self.produto.pk,
             1,
+            "adicional-1",
         )
         registrar_lancamento_adicional(
             outro_garcom.pk,
             "001",
             self.produto.pk,
             2,
+            "adicional-2",
         )
 
         lancamentos = list(atendimento.lancamentos.order_by("pk"))

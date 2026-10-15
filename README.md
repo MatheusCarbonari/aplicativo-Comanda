@@ -103,6 +103,18 @@ O Total atual é calculado em centavos pela soma de `quantidade × preço unitá
 registrado` de todos os Lançamentos persistidos no Atendimento. O cálculo não usa
 o preço atual do catálogo e o valor é formatado em reais somente na interface.
 
+Cada registro de Lançamento recebe uma chave de idempotência opaca gerada pela
+interface. O backend combina essa chave com uma identidade estável da operação e
+com o SHA-256 de um JSON canônico dos dados que definem a intenção. A mudança de
+domínio e o resultado reutilizável são confirmados na mesma transação SQLite.
+Repetir a mesma chave com a mesma intenção retorna o resultado original; reutilizar
+a chave com operação ou conteúdo diferente é rejeitado. Chaves diferentes continuam
+representando ações intencionais distintas.
+
+O formulário desabilita seu botão após um envio válido para reduzir toques duplos,
+mas essa é apenas uma conveniência. A garantia efetiva está no registro persistente,
+cuja chave possui unicidade no banco e continua válida após reiniciar a aplicação.
+
 ## Persistência SQLite
 
 O banco operacional fica em `.local/dados/restaurante.sqlite3`, um diretório

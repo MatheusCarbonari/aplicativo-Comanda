@@ -1,13 +1,13 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
-from django.db import transaction
-
+from restaurante.aplicacao.idempotencia import executar_idempotente
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
     ComandaNaoEncontrada,
     ProdutoNaoEncontrado,
 )
 from restaurante.aplicacao.usuarios_operacionais import (
     buscar_garcom,
+    normalizar_identificador_usuario,
 )
 from restaurante.dominio.lancamentos import (
     calcular_total_atendimento,
@@ -23,6 +23,11 @@ from restaurante.persistencia.models import (
 
 class AtendimentoAbertoNaoEncontrado(Exception):
     pass
+
+
+OPERACAO_REGISTRAR_LANCAMENTO_ADICIONAL = (
+    "REGISTRAR_LANCAMENTO_ADICIONAL"
+)
 
 
 @dataclass(frozen=True)
@@ -42,25 +47,32 @@ def registrar_lancamento_adicional(
     identificador_comanda: str,
     produto_id: object,
     quantidade: object,
+    chave_idempotencia: object,
 ) -> ResultadoLancamentoAdicional:
-    usuario = buscar_garcom(usuario_operacional_id)
-    comanda = ComandaFisica.objects.filter(
-        identificador=identificador_comanda
-    ).first()
-    if comanda is None:
-        raise ComandaNaoEncontrada
-
+    chave_usuario = normalizar_identificador_usuario(usuario_operacional_id)
     try:
         chave_produto = int(produto_id)
     except (TypeError, ValueError) as erro:
         raise ProdutoNaoEncontrado from erro
-    produto = Produto.objects.filter(pk=chave_produto).first()
-    if produto is None:
-        raise ProdutoNaoEncontrado
-
     quantidade_validada = validar_quantidade(quantidade)
 
-    with transaction.atomic():
+    conteudo = {
+        "usuario_operacional_id": chave_usuario,
+        "comanda": identificador_comanda,
+        "produto_id": chave_produto,
+        "quantidade": quantidade_validada,
+    }
+
+    def executar() -> dict[str, object]:
+        usuario = buscar_garcom(chave_usuario)
+        comanda = ComandaFisica.objects.filter(
+            identificador=identificador_comanda
+        ).first()
+        if comanda is None:
+            raise ComandaNaoEncontrada
+        produto = Produto.objects.filter(pk=chave_produto).first()
+        if produto is None:
+            raise ProdutoNaoEncontrado
         atendimento = Atendimento.objects.filter(
             comanda=comanda,
             estado=Atendimento.Estado.ABERTO,
@@ -81,14 +93,23 @@ def registrar_lancamento_adicional(
                 "preco_unitario_centavos",
             )
         )
+        return asdict(
+            ResultadoLancamentoAdicional(
+                atendimento_id=atendimento.pk,
+                lancamento_id=lancamento.pk,
+                comanda=comanda.identificador,
+                produto=produto.nome,
+                quantidade=lancamento.quantidade,
+                preco_unitario_centavos=lancamento.preco_unitario_centavos,
+                autor=usuario.nome,
+                total_centavos=total_centavos,
+            )
+        )
 
-    return ResultadoLancamentoAdicional(
-        atendimento_id=atendimento.pk,
-        lancamento_id=lancamento.pk,
-        comanda=comanda.identificador,
-        produto=produto.nome,
-        quantidade=lancamento.quantidade,
-        preco_unitario_centavos=lancamento.preco_unitario_centavos,
-        autor=usuario.nome,
-        total_centavos=total_centavos,
+    resultado = executar_idempotente(
+        chave=chave_idempotencia,
+        operacao=OPERACAO_REGISTRAR_LANCAMENTO_ADICIONAL,
+        conteudo=conteudo,
+        executar=executar,
     )
+    return ResultadoLancamentoAdicional(**resultado)

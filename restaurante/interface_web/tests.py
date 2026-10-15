@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from django.test import TestCase
 
 from restaurante.persistencia.models import (
@@ -236,6 +238,23 @@ class PrimeiroLancamentoInterfaceTests(TestCase):
         self.assertContains(resposta, "Registrar primeiro lançamento")
         self.assertContains(resposta, "Batata frita")
         self.assertContains(resposta, 'name="quantidade"', html=False)
+        self.assertContains(resposta, 'name="chave_idempotencia"', html=False)
+        self.assertContains(
+            resposta,
+            "/static/interface_web/js/proteger_envio.js",
+        )
+        UUID(resposta.context["chave_idempotencia"])
+
+    def test_nova_renderizacao_gera_nova_chave(self):
+        self.selecionar(self.garcom)
+
+        primeira = self.client.get("/garcom/")
+        segunda = self.client.get("/garcom/")
+
+        self.assertNotEqual(
+            primeira.context["chave_idempotencia"],
+            segunda.context["chave_idempotencia"],
+        )
 
     def test_caixa_nao_ve_nem_pode_usar_acao_de_lancamento(self):
         self.selecionar(self.caixa)
@@ -247,6 +266,7 @@ class PrimeiroLancamentoInterfaceTests(TestCase):
                 "identificador_comanda": "001",
                 "produto_id": self.produto.pk,
                 "quantidade": "1",
+                "chave_idempotencia": "caixa-primeiro",
             },
         )
 
@@ -264,6 +284,7 @@ class PrimeiroLancamentoInterfaceTests(TestCase):
                 "identificador_comanda": "001",
                 "produto_id": self.produto.pk,
                 "quantidade": "2",
+                "chave_idempotencia": "primeiro-interface",
             },
         )
 
@@ -277,19 +298,57 @@ class PrimeiroLancamentoInterfaceTests(TestCase):
         self.assertEqual(Atendimento.objects.count(), 1)
         self.assertEqual(Lancamento.objects.count(), 1)
 
+    def test_reenvio_da_mesma_requisicao_nao_duplica_lancamento(self):
+        self.selecionar(self.garcom)
+        dados = {
+            "identificador_comanda": "001",
+            "produto_id": self.produto.pk,
+            "quantidade": "1",
+            "chave_idempotencia": "toque-duplo-primeiro",
+        }
+
+        primeira = self.client.post("/lancamentos/primeiro/", dados)
+        repetida = self.client.post("/lancamentos/primeiro/", dados)
+
+        self.assertEqual(primeira.status_code, 200)
+        self.assertEqual(repetida.status_code, 200)
+        self.assertEqual(Atendimento.objects.count(), 1)
+        self.assertEqual(Lancamento.objects.count(), 1)
+
+    def test_reutilizar_chave_com_outro_conteudo_retorna_conflito(self):
+        self.selecionar(self.garcom)
+        dados = {
+            "identificador_comanda": "001",
+            "produto_id": self.produto.pk,
+            "quantidade": "1",
+            "chave_idempotencia": "conflito-interface",
+        }
+        self.client.post("/lancamentos/primeiro/", dados)
+        dados["quantidade"] = "2"
+
+        resposta = self.client.post("/lancamentos/primeiro/", dados)
+
+        self.assertEqual(resposta.status_code, 409)
+        self.assertContains(
+            resposta,
+            "Esta tentativa já foi usada com dados diferentes",
+            status_code=409,
+        )
+        self.assertEqual(Lancamento.objects.count(), 1)
+
     def test_entrada_invalida_exibe_erro_sem_criar_estado_parcial(self):
         self.selecionar(self.garcom)
         cenarios = (
             (
-                {"identificador_comanda": "999", "produto_id": self.produto.pk, "quantidade": "1"},
+                {"identificador_comanda": "999", "produto_id": self.produto.pk, "quantidade": "1", "chave_idempotencia": "comanda-invalida"},
                 "Comanda não encontrada",
             ),
             (
-                {"identificador_comanda": "001", "produto_id": "999999", "quantidade": "1"},
+                {"identificador_comanda": "001", "produto_id": "999999", "quantidade": "1", "chave_idempotencia": "produto-invalido"},
                 "Produto não encontrado",
             ),
             (
-                {"identificador_comanda": "001", "produto_id": self.produto.pk, "quantidade": "1.5"},
+                {"identificador_comanda": "001", "produto_id": self.produto.pk, "quantidade": "1.5", "chave_idempotencia": "quantidade-invalida"},
                 "Informe uma quantidade inteira positiva",
             ),
         )
@@ -337,6 +396,7 @@ class LancamentoAdicionalInterfaceTests(TestCase):
         self.assertContains(resposta, "Adicionar consumo")
         self.assertContains(resposta, "Café")
         self.assertContains(resposta, "Pizza")
+        self.assertContains(resposta, 'name="chave_idempotencia"', html=False)
 
     def test_caixa_nao_ve_nem_pode_usar_acao_adicional(self):
         self.selecionar(self.caixa)
@@ -351,6 +411,7 @@ class LancamentoAdicionalInterfaceTests(TestCase):
                 "identificador_comanda": "001",
                 "produto_id": self.cafe.pk,
                 "quantidade": "1",
+                "chave_idempotencia": "caixa-adicional",
             },
         )
 
@@ -368,6 +429,7 @@ class LancamentoAdicionalInterfaceTests(TestCase):
                     "identificador_comanda": "001",
                     "produto_id": self.cafe.pk,
                     "quantidade": quantidade,
+                    "chave_idempotencia": f"adicional-{quantidade}",
                 },
             )
             self.assertEqual(resposta.status_code, 200)
@@ -378,6 +440,22 @@ class LancamentoAdicionalInterfaceTests(TestCase):
             [lancamento.quantidade for lancamento in lancamentos],
             [1, 2],
         )
+
+    def test_reenvio_da_mesma_requisicao_adicional_nao_duplica(self):
+        self.selecionar(self.garcom)
+        dados = {
+            "identificador_comanda": "001",
+            "produto_id": self.cafe.pk,
+            "quantidade": "1",
+            "chave_idempotencia": "toque-duplo-adicional",
+        }
+
+        primeira = self.client.post("/lancamentos/adicional/", dados)
+        repetida = self.client.post("/lancamentos/adicional/", dados)
+
+        self.assertEqual(primeira.status_code, 200)
+        self.assertEqual(repetida.status_code, 200)
+        self.assertEqual(self.atendimento.lancamentos.count(), 1)
 
     def test_total_atual_e_exibido_em_brl(self):
         Lancamento.objects.create(
@@ -395,6 +473,7 @@ class LancamentoAdicionalInterfaceTests(TestCase):
                 "identificador_comanda": "001",
                 "produto_id": self.pizza.pk,
                 "quantidade": "1",
+                "chave_idempotencia": "total-interface",
             },
         )
 
@@ -417,6 +496,7 @@ class LancamentoAdicionalInterfaceTests(TestCase):
                 "identificador_comanda": "001",
                 "produto_id": self.cafe.pk,
                 "quantidade": "1",
+                "chave_idempotencia": "atendimento-encerrado",
             },
         )
 

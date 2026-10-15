@@ -1,5 +1,6 @@
 from django.test import TestCase
 
+from restaurante.aplicacao.idempotencia import ConflitoIdempotencia
 from restaurante.aplicacao.registrar_lancamento_adicional import (
     AtendimentoAbertoNaoEncontrado,
     registrar_lancamento_adicional,
@@ -11,6 +12,7 @@ from restaurante.aplicacao.consultar_estado_comanda import (
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
     ComandaNaoEncontrada,
     ProdutoNaoEncontrado,
+    registrar_primeiro_lancamento,
 )
 from restaurante.dominio.lancamentos import QuantidadeInvalida
 from restaurante.persistencia.models import (
@@ -32,6 +34,97 @@ class RegistrarLancamentoAdicionalTests(TestCase):
         atendimento = Atendimento.objects.create(comanda=comanda)
         produto = Produto.objects.create(nome="Café", preco_centavos=600)
         return garcom, atendimento, produto
+
+    def test_repetir_mesma_tentativa_nao_cria_outro_lancamento(self):
+        garcom, atendimento, produto = self.criar_cenario_aberto()
+
+        primeiro = registrar_lancamento_adicional(
+            garcom.pk, "001", produto.pk, 1, "mesma-tentativa"
+        )
+        repetido = registrar_lancamento_adicional(
+            garcom.pk, "001", produto.pk, 1, "mesma-tentativa"
+        )
+
+        self.assertEqual(repetido, primeiro)
+        self.assertEqual(atendimento.lancamentos.count(), 1)
+
+    def test_replay_preserva_resultado_apos_produto_e_comanda_mudarem(self):
+        garcom, atendimento, produto = self.criar_cenario_aberto()
+        original = registrar_lancamento_adicional(
+            garcom.pk, "001", produto.pk, 1, "replay-apos-cadastros"
+        )
+        produto.nome = "Café especial"
+        produto.preco_centavos = 900
+        produto.save(update_fields=["nome", "preco_centavos"])
+        atendimento.comanda.identificador = "099"
+        atendimento.comanda.save(update_fields=["identificador"])
+
+        repetido = registrar_lancamento_adicional(
+            garcom.pk, "001", produto.pk, 1, "replay-apos-cadastros"
+        )
+
+        self.assertEqual(repetido, original)
+        self.assertEqual(repetido.produto, "Café")
+        self.assertEqual(repetido.preco_unitario_centavos, 600)
+        self.assertEqual(atendimento.lancamentos.count(), 1)
+        with self.assertRaises(ComandaNaoEncontrada):
+            registrar_lancamento_adicional(
+                garcom.pk,
+                "001",
+                produto.pk,
+                1,
+                "nova-chave-apos-cadastros",
+            )
+
+    def test_mesma_chave_com_produto_diferente_e_conflito(self):
+        garcom, atendimento, produto = self.criar_cenario_aberto()
+        pizza = Produto.objects.create(nome="Pizza", preco_centavos=4500)
+        registrar_lancamento_adicional(
+            garcom.pk, "001", produto.pk, 1, "tentativa-conflitante"
+        )
+
+        with self.assertRaises(ConflitoIdempotencia):
+            registrar_lancamento_adicional(
+                garcom.pk,
+                "001",
+                pizza.pk,
+                1,
+                "tentativa-conflitante",
+            )
+
+        self.assertEqual(atendimento.lancamentos.count(), 1)
+
+    def test_chaves_diferentes_criam_lancamentos_intencionais_iguais(self):
+        garcom, atendimento, produto = self.criar_cenario_aberto()
+
+        for chave in ("tentativa-a", "tentativa-b"):
+            registrar_lancamento_adicional(
+                garcom.pk, "001", produto.pk, 1, chave
+            )
+
+        self.assertEqual(atendimento.lancamentos.count(), 2)
+
+    def test_mesma_chave_nao_pode_ser_reutilizada_em_outra_operacao(self):
+        garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        ComandaFisica.objects.create(identificador="001")
+        produto = Produto.objects.create(nome="Café", preco_centavos=600)
+        registrar_primeiro_lancamento(
+            garcom.pk, "001", produto.pk, 1, "chave-entre-operacoes"
+        )
+
+        with self.assertRaises(ConflitoIdempotencia):
+            registrar_lancamento_adicional(
+                garcom.pk,
+                "001",
+                produto.pk,
+                1,
+                "chave-entre-operacoes",
+            )
+
+        self.assertEqual(Lancamento.objects.count(), 1)
 
     def test_outro_garcom_adiciona_registro_independente_ao_atendimento(self):
         garcom_1 = UsuarioOperacional.objects.create(
@@ -58,6 +151,7 @@ class RegistrarLancamentoAdicionalTests(TestCase):
             "001",
             cafe.pk,
             2,
+            "adicional-outro-garcom",
         )
 
         lancamentos = list(atendimento.lancamentos.order_by("pk"))
@@ -94,6 +188,7 @@ class RegistrarLancamentoAdicionalTests(TestCase):
             "001",
             cafe.pk,
             1,
+            "adicional-snapshot",
         )
         cafe.preco_centavos = 900
         cafe.save(update_fields=["preco_centavos"])
@@ -123,6 +218,7 @@ class RegistrarLancamentoAdicionalTests(TestCase):
                         identificador,
                         produto.pk,
                         1,
+                        f"comanda-{identificador}",
                     )
 
         self.assertEqual(Atendimento.objects.count(), 0)
@@ -132,7 +228,9 @@ class RegistrarLancamentoAdicionalTests(TestCase):
         garcom, atendimento, produto = self.criar_cenario_aberto()
 
         with self.assertRaises(ProdutoNaoEncontrado):
-            registrar_lancamento_adicional(garcom.pk, "001", 999_999, 1)
+            registrar_lancamento_adicional(
+                garcom.pk, "001", 999_999, 1, "produto-inexistente"
+            )
         for quantidade in (0, -1, "1.5", "abc", ""):
             with self.subTest(quantidade=quantidade):
                 with self.assertRaises(QuantidadeInvalida):
@@ -141,6 +239,7 @@ class RegistrarLancamentoAdicionalTests(TestCase):
                         "001",
                         produto.pk,
                         quantidade,
+                        f"quantidade-{quantidade}",
                     )
 
         self.assertEqual(Atendimento.objects.get(), atendimento)
@@ -153,11 +252,19 @@ class RegistrarLancamentoAdicionalTests(TestCase):
         )
 
         with self.assertRaises(PapelNaoPermitido):
-            registrar_lancamento_adicional(caixa.pk, "001", 1, 1)
+            registrar_lancamento_adicional(
+                caixa.pk, "001", 1, 1, "caixa-sem-permissao"
+            )
         for usuario_id in (999_999, "inválido", None):
             with self.subTest(usuario_id=usuario_id):
                 with self.assertRaises(UsuarioOperacionalInvalido):
-                    registrar_lancamento_adicional(usuario_id, "001", 1, 1)
+                    registrar_lancamento_adicional(
+                        usuario_id,
+                        "001",
+                        1,
+                        1,
+                        f"usuario-{usuario_id}",
+                    )
 
         self.assertEqual(Atendimento.objects.count(), 0)
         self.assertEqual(Lancamento.objects.count(), 0)
@@ -180,6 +287,7 @@ class RegistrarLancamentoAdicionalTests(TestCase):
                 "001",
                 produto.pk,
                 1,
+                "atendimento-encerrado",
             )
 
         self.assertEqual(Atendimento.objects.get(), atendimento_encerrado)

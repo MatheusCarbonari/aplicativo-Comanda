@@ -1,7 +1,8 @@
 <section class="secao-operacional" aria-labelledby="titulo-lancamento-adicional">
   <h2 id="titulo-lancamento-adicional">Adicionar consumo</h2>
-  <form class="formulario-operacional" method="post" action="{% url 'registrar_lancamento_adicional' %}">
+  <form class="formulario-operacional" method="post" action="{% url 'registrar_lancamento_adicional' %}" data-envio-unico>
     {% csrf_token %}
+    <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
     <input
       name="identificador_comanda"
       type="hidden"

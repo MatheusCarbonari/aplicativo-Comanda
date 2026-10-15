@@ -72,3 +72,11 @@ class Lancamento(models.Model):
                 name="lancamento_quantidade_positiva",
             )
         ]
+
+
+class RegistroIdempotencia(models.Model):
+    chave = models.CharField(max_length=255, unique=True)
+    operacao = models.CharField(max_length=80)
+    hash_conteudo = models.CharField(max_length=64)
+    resultado = models.JSONField()
+    criado_em = models.DateTimeField(auto_now_add=True)

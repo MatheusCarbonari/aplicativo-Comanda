@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from django.test import TestCase
 
+from restaurante.aplicacao.idempotencia import ConflitoIdempotencia
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
     ComandaEmAtendimento,
     ComandaNaoEncontrada,
@@ -23,6 +24,73 @@ from restaurante.persistencia.models import (
 
 
 class RegistrarPrimeiroLancamentoTests(TestCase):
+    def test_repetir_mesma_tentativa_retorna_resultado_sem_duplicar(self):
+        garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        ComandaFisica.objects.create(identificador="001")
+        produto = Produto.objects.create(nome="Café", preco_centavos=600)
+
+        primeiro = registrar_primeiro_lancamento(
+            garcom.pk, "001", produto.pk, 1, "mesma-tentativa"
+        )
+        repetido = registrar_primeiro_lancamento(
+            garcom.pk, "001", produto.pk, 1, "mesma-tentativa"
+        )
+
+        self.assertEqual(repetido, primeiro)
+        self.assertEqual(Atendimento.objects.count(), 1)
+        self.assertEqual(Lancamento.objects.count(), 1)
+
+    def test_replay_retorna_resultado_original_apos_garcom_mudar_de_papel(self):
+        garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        ComandaFisica.objects.create(identificador="001")
+        produto = Produto.objects.create(nome="Café", preco_centavos=600)
+        original = registrar_primeiro_lancamento(
+            garcom.pk, "001", produto.pk, 1, "replay-apos-papel"
+        )
+        garcom.papel = UsuarioOperacional.Papel.CAIXA
+        garcom.save(update_fields=["papel"])
+
+        repetido = registrar_primeiro_lancamento(
+            garcom.pk, "001", produto.pk, 1, "replay-apos-papel"
+        )
+
+        self.assertEqual(repetido, original)
+        self.assertEqual(Atendimento.objects.count(), 1)
+        self.assertEqual(Lancamento.objects.count(), 1)
+        with self.assertRaises(PapelNaoPermitido):
+            registrar_primeiro_lancamento(
+                garcom.pk, "001", produto.pk, 1, "nova-chave-apos-papel"
+            )
+
+    def test_mesma_chave_com_quantidade_diferente_e_conflito(self):
+        garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        ComandaFisica.objects.create(identificador="001")
+        produto = Produto.objects.create(nome="Café", preco_centavos=600)
+        registrar_primeiro_lancamento(
+            garcom.pk, "001", produto.pk, 1, "tentativa-conflitante"
+        )
+
+        with self.assertRaises(ConflitoIdempotencia):
+            registrar_primeiro_lancamento(
+                garcom.pk,
+                "001",
+                produto.pk,
+                2,
+                "tentativa-conflitante",
+            )
+
+        self.assertEqual(Atendimento.objects.count(), 1)
+        self.assertEqual(Lancamento.objects.count(), 1)
+
     def test_garcom_registra_primeiro_lancamento_em_comanda_disponivel(self):
         garcom = UsuarioOperacional.objects.create(
             nome="Garçom 1",
@@ -39,6 +107,7 @@ class RegistrarPrimeiroLancamentoTests(TestCase):
             "001",
             produto.pk,
             2,
+            "primeiro-sucesso",
         )
 
         atendimento = Atendimento.objects.get()
@@ -68,7 +137,9 @@ class RegistrarPrimeiroLancamentoTests(TestCase):
             preco_centavos=2000,
         )
 
-        registrar_primeiro_lancamento(garcom.pk, "001", produto.pk, 1)
+        registrar_primeiro_lancamento(
+            garcom.pk, "001", produto.pk, 1, "snapshot-preco"
+        )
         produto.preco_centavos = 2500
         produto.save(update_fields=["preco_centavos"])
 
@@ -90,6 +161,7 @@ class RegistrarPrimeiroLancamentoTests(TestCase):
                         identificador,
                         produto.pk,
                         1,
+                        f"comanda-{identificador}",
                     )
 
         self.assertEqual(Atendimento.objects.count(), 0)
@@ -103,7 +175,9 @@ class RegistrarPrimeiroLancamentoTests(TestCase):
         ComandaFisica.objects.create(identificador="001")
 
         with self.assertRaises(ProdutoNaoEncontrado):
-            registrar_primeiro_lancamento(garcom.pk, "001", 999_999, 1)
+            registrar_primeiro_lancamento(
+                garcom.pk, "001", 999_999, 1, "produto-inexistente"
+            )
 
         self.assertEqual(Atendimento.objects.count(), 0)
         self.assertEqual(Lancamento.objects.count(), 0)
@@ -124,6 +198,7 @@ class RegistrarPrimeiroLancamentoTests(TestCase):
                         "001",
                         produto.pk,
                         quantidade,
+                        f"quantidade-{quantidade}",
                     )
 
         self.assertEqual(Atendimento.objects.count(), 0)
@@ -136,7 +211,9 @@ class RegistrarPrimeiroLancamentoTests(TestCase):
         )
 
         with self.assertRaises(PapelNaoPermitido):
-            registrar_primeiro_lancamento(caixa.pk, "001", 1, 1)
+            registrar_primeiro_lancamento(
+                caixa.pk, "001", 1, 1, "caixa-sem-permissao"
+            )
 
         self.assertEqual(Atendimento.objects.count(), 0)
         self.assertEqual(Lancamento.objects.count(), 0)
@@ -145,7 +222,13 @@ class RegistrarPrimeiroLancamentoTests(TestCase):
         for usuario_id in (999_999, "inválido", None):
             with self.subTest(usuario_id=usuario_id):
                 with self.assertRaises(UsuarioOperacionalInvalido):
-                    registrar_primeiro_lancamento(usuario_id, "001", 1, 1)
+                    registrar_primeiro_lancamento(
+                        usuario_id,
+                        "001",
+                        1,
+                        1,
+                        f"usuario-{usuario_id}",
+                    )
 
         self.assertEqual(Atendimento.objects.count(), 0)
         self.assertEqual(Lancamento.objects.count(), 0)
@@ -160,7 +243,13 @@ class RegistrarPrimeiroLancamentoTests(TestCase):
         produto = Produto.objects.create(nome="Café", preco_centavos=600)
 
         with self.assertRaises(ComandaEmAtendimento):
-            registrar_primeiro_lancamento(garcom.pk, "001", produto.pk, 1)
+            registrar_primeiro_lancamento(
+                garcom.pk,
+                "001",
+                produto.pk,
+                1,
+                "comanda-em-atendimento",
+            )
 
         self.assertEqual(Atendimento.objects.count(), 1)
         self.assertEqual(Lancamento.objects.count(), 0)

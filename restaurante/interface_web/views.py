@@ -1,5 +1,7 @@
 """Páginas renderizadas pela interface web."""
 
+from uuid import uuid4
+
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -10,6 +12,10 @@ from restaurante.aplicacao.consultar_estado_comanda import (
     PapelNaoPermitido,
     UsuarioOperacionalInvalido,
     consultar_estado_comanda,
+)
+from restaurante.aplicacao.idempotencia import (
+    ChaveIdempotenciaInvalida,
+    ConflitoIdempotencia,
 )
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
     ComandaEmAtendimento,
@@ -52,6 +58,7 @@ def _contexto_garcom(
         "pode_lancar": True,
         "produtos": Produto.objects.order_by("nome"),
         "erro_lancamento": erro_lancamento,
+        "chave_idempotencia": str(uuid4()),
     }
 
 
@@ -135,6 +142,7 @@ def consultar_comanda(request: HttpRequest) -> HttpResponse:
                 == UsuarioOperacional.Papel.GARCOM
             ),
             "produtos": Produto.objects.order_by("nome"),
+            "chave_idempotencia": str(uuid4()),
         },
     )
 
@@ -147,22 +155,40 @@ def registrar_primeiro_lancamento(request: HttpRequest) -> HttpResponse:
             request.POST.get("identificador_comanda", ""),
             request.POST.get("produto_id"),
             request.POST.get("quantidade"),
+            request.POST.get("chave_idempotencia"),
         )
     except UsuarioOperacionalInvalido:
         return _redirecionar_selecao_invalida(request)
     except PapelNaoPermitido:
         return HttpResponseForbidden("Usuário operacional sem permissão.")
+    except ConflitoIdempotencia:
+        usuario = _buscar_usuario(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL)
+        )
+        return render(
+            request,
+            "interface_web/experiencia_usuario.html",
+            _contexto_garcom(
+                usuario,
+                "Esta tentativa já foi usada com dados diferentes",
+            ),
+            status=409,
+        )
     except (
         ComandaNaoEncontrada,
         ProdutoNaoEncontrado,
         QuantidadeInvalida,
         ComandaEmAtendimento,
+        ChaveIdempotenciaInvalida,
     ) as erro:
         mensagens = {
             ComandaNaoEncontrada: "Comanda não encontrada",
             ProdutoNaoEncontrado: "Produto não encontrado",
             QuantidadeInvalida: "Informe uma quantidade inteira positiva",
             ComandaEmAtendimento: "Comanda já está em atendimento",
+            ChaveIdempotenciaInvalida: (
+                "Não foi possível identificar esta tentativa"
+            ),
         }
         usuario = _buscar_usuario(
             request.session.get(CHAVE_USUARIO_OPERACIONAL)
@@ -195,16 +221,31 @@ def registrar_lancamento_adicional(request: HttpRequest) -> HttpResponse:
             request.POST.get("identificador_comanda", ""),
             request.POST.get("produto_id"),
             request.POST.get("quantidade"),
+            request.POST.get("chave_idempotencia"),
         )
     except UsuarioOperacionalInvalido:
         return _redirecionar_selecao_invalida(request)
     except PapelNaoPermitido:
         return HttpResponseForbidden("Usuário operacional sem permissão.")
+    except ConflitoIdempotencia:
+        usuario = _buscar_usuario(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL)
+        )
+        return render(
+            request,
+            "interface_web/experiencia_usuario.html",
+            _contexto_garcom(
+                usuario,
+                "Esta tentativa já foi usada com dados diferentes",
+            ),
+            status=409,
+        )
     except (
         ComandaNaoEncontrada,
         ProdutoNaoEncontrado,
         QuantidadeInvalida,
         AtendimentoAbertoNaoEncontrado,
+        ChaveIdempotenciaInvalida,
     ) as erro:
         mensagens = {
             ComandaNaoEncontrada: "Comanda não encontrada",
@@ -212,6 +253,9 @@ def registrar_lancamento_adicional(request: HttpRequest) -> HttpResponse:
             QuantidadeInvalida: "Informe uma quantidade inteira positiva",
             AtendimentoAbertoNaoEncontrado: (
                 "Nenhum atendimento aberto para esta Comanda"
+            ),
+            ChaveIdempotenciaInvalida: (
+                "Não foi possível identificar esta tentativa"
             ),
         }
         usuario = _buscar_usuario(
