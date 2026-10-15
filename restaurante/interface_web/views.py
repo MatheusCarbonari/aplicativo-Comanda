@@ -17,6 +17,10 @@ from restaurante.aplicacao.registrar_primeiro_lancamento import (
     ProdutoNaoEncontrado,
     registrar_primeiro_lancamento as executar_primeiro_lancamento,
 )
+from restaurante.aplicacao.registrar_lancamento_adicional import (
+    AtendimentoAbertoNaoEncontrado,
+    registrar_lancamento_adicional as executar_lancamento_adicional,
+)
 from restaurante.dominio.lancamentos import QuantidadeInvalida
 from restaurante.persistencia.models import Produto, UsuarioOperacional
 
@@ -115,12 +119,22 @@ def consultar_comanda(request: HttpRequest) -> HttpResponse:
         EstadoComanda.EM_ATENDIMENTO: "Em atendimento",
         EstadoComanda.NAO_ENCONTRADA: "Comanda não encontrada",
     }
+    usuario_atual = _buscar_usuario(
+        request.session.get(CHAVE_USUARIO_OPERACIONAL)
+    )
     return render(
         request,
         "interface_web/consulta_comanda.html",
         {
             "identificador": resultado.identificador,
             "mensagem": mensagens[resultado.estado],
+            "pode_lancar_adicional": (
+                resultado.estado == EstadoComanda.EM_ATENDIMENTO
+                and usuario_atual is not None
+                and usuario_atual.papel
+                == UsuarioOperacional.Papel.GARCOM
+            ),
+            "produtos": Produto.objects.order_by("nome"),
         },
     )
 
@@ -169,6 +183,55 @@ def registrar_primeiro_lancamento(request: HttpRequest) -> HttpResponse:
         {
             "resultado": resultado,
             "total_formatado": _formatar_centavos_brl(total_centavos),
+        },
+    )
+
+
+@require_POST
+def registrar_lancamento_adicional(request: HttpRequest) -> HttpResponse:
+    try:
+        resultado = executar_lancamento_adicional(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL),
+            request.POST.get("identificador_comanda", ""),
+            request.POST.get("produto_id"),
+            request.POST.get("quantidade"),
+        )
+    except UsuarioOperacionalInvalido:
+        return _redirecionar_selecao_invalida(request)
+    except PapelNaoPermitido:
+        return HttpResponseForbidden("Usuário operacional sem permissão.")
+    except (
+        ComandaNaoEncontrada,
+        ProdutoNaoEncontrado,
+        QuantidadeInvalida,
+        AtendimentoAbertoNaoEncontrado,
+    ) as erro:
+        mensagens = {
+            ComandaNaoEncontrada: "Comanda não encontrada",
+            ProdutoNaoEncontrado: "Produto não encontrado",
+            QuantidadeInvalida: "Informe uma quantidade inteira positiva",
+            AtendimentoAbertoNaoEncontrado: (
+                "Nenhum atendimento aberto para esta Comanda"
+            ),
+        }
+        usuario = _buscar_usuario(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL)
+        )
+        return render(
+            request,
+            "interface_web/experiencia_usuario.html",
+            _contexto_garcom(usuario, mensagens[type(erro)]),
+            status=400,
+        )
+
+    return render(
+        request,
+        "interface_web/lancamento_registrado.html",
+        {
+            "resultado": resultado,
+            "total_formatado": _formatar_centavos_brl(
+                resultado.total_centavos
+            ),
         },
     )
 

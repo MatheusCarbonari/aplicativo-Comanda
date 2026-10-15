@@ -1,0 +1,31 @@
+<section class="secao-operacional" aria-labelledby="titulo-lancamento-adicional">
+  <h2 id="titulo-lancamento-adicional">Adicionar consumo</h2>
+  <form class="formulario-operacional" method="post" action="{% url 'registrar_lancamento_adicional' %}">
+    {% csrf_token %}
+    <input
+      name="identificador_comanda"
+      type="hidden"
+      value="{{ identificador }}"
+    >
+
+    <label for="produto-adicional">Produto</label>
+    <select id="produto-adicional" name="produto_id" required>
+      <option value="">Selecione um produto</option>
+      {% for produto in produtos %}
+        <option value="{{ produto.pk }}">{{ produto.nome }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="quantidade-adicional">Quantidade</label>
+    <input
+      id="quantidade-adicional"
+      name="quantidade"
+      type="number"
+      min="1"
+      step="1"
+      inputmode="numeric"
+      required
+    >
+    <button type="submit">Registrar consumo</button>
+  </form>
+</section>

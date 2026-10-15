@@ -302,3 +302,128 @@ class PrimeiroLancamentoInterfaceTests(TestCase):
                 self.assertContains(resposta, mensagem, status_code=400)
                 self.assertEqual(Atendimento.objects.count(), 0)
                 self.assertEqual(Lancamento.objects.count(), 0)
+
+
+class LancamentoAdicionalInterfaceTests(TestCase):
+    def setUp(self):
+        self.garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        self.caixa = UsuarioOperacional.objects.create(
+            nome="Caixa 1",
+            papel=UsuarioOperacional.Papel.CAIXA,
+        )
+        self.comanda = ComandaFisica.objects.create(identificador="001")
+        self.atendimento = Atendimento.objects.create(comanda=self.comanda)
+        self.cafe = Produto.objects.create(nome="Café", preco_centavos=600)
+        self.pizza = Produto.objects.create(nome="Pizza", preco_centavos=4500)
+
+    def selecionar(self, usuario: UsuarioOperacional) -> None:
+        self.client.post(
+            "/usuarios/selecionar/",
+            {"usuario_id": usuario.pk},
+        )
+
+    def test_garcom_ve_acao_ao_consultar_comanda_em_atendimento(self):
+        self.selecionar(self.garcom)
+
+        resposta = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Adicionar consumo")
+        self.assertContains(resposta, "Café")
+        self.assertContains(resposta, "Pizza")
+
+    def test_caixa_nao_ve_nem_pode_usar_acao_adicional(self):
+        self.selecionar(self.caixa)
+
+        pagina = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+        resposta = self.client.post(
+            "/lancamentos/adicional/",
+            {
+                "identificador_comanda": "001",
+                "produto_id": self.cafe.pk,
+                "quantidade": "1",
+            },
+        )
+
+        self.assertNotContains(pagina, "Adicionar consumo")
+        self.assertEqual(resposta.status_code, 403)
+        self.assertEqual(Lancamento.objects.count(), 0)
+
+    def test_dois_lancamentos_sucessivos_continuam_independentes(self):
+        self.selecionar(self.garcom)
+
+        for quantidade in ("1", "2"):
+            resposta = self.client.post(
+                "/lancamentos/adicional/",
+                {
+                    "identificador_comanda": "001",
+                    "produto_id": self.cafe.pk,
+                    "quantidade": quantidade,
+                },
+            )
+            self.assertEqual(resposta.status_code, 200)
+
+        lancamentos = list(self.atendimento.lancamentos.order_by("pk"))
+        self.assertEqual(len(lancamentos), 2)
+        self.assertEqual(
+            [lancamento.quantidade for lancamento in lancamentos],
+            [1, 2],
+        )
+
+    def test_total_atual_e_exibido_em_brl(self):
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.cafe,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        self.selecionar(self.garcom)
+
+        resposta = self.client.post(
+            "/lancamentos/adicional/",
+            {
+                "identificador_comanda": "001",
+                "produto_id": self.pizza.pk,
+                "quantidade": "1",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Lançamento registrado")
+        self.assertContains(resposta, "Comanda 001")
+        self.assertContains(resposta, "Pizza")
+        self.assertContains(resposta, "Quantidade: 1")
+        self.assertContains(resposta, "Total atual")
+        self.assertContains(resposta, "R$ 57,00")
+
+    def test_atendimento_encerrado_exibe_erro_sem_criar_lancamento(self):
+        self.atendimento.estado = Atendimento.Estado.ENCERRADO
+        self.atendimento.save(update_fields=["estado"])
+        self.selecionar(self.garcom)
+
+        resposta = self.client.post(
+            "/lancamentos/adicional/",
+            {
+                "identificador_comanda": "001",
+                "produto_id": self.cafe.pk,
+                "quantidade": "1",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 400)
+        self.assertContains(
+            resposta,
+            "Nenhum atendimento aberto para esta Comanda",
+            status_code=400,
+        )
+        self.assertEqual(Lancamento.objects.count(), 0)

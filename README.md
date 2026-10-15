@@ -93,6 +93,16 @@ posteriores no preço do Produto não modificam o preço registrado. A proteçã
 unicidade do Atendimento aberto permanece no SQLite; uma violação concorrente é
 apresentada como Comanda já em atendimento e a transação não deixa dados parciais.
 
+Quando a consulta encontra uma Comanda em atendimento, a interface do Garçom
+permite adicionar outro consumo ao Atendimento aberto existente. Cada confirmação
+cria um novo Lançamento, inclusive para o mesmo Produto, e preserva separadamente
+quantidade, preço registrado, autor e horário. Nenhum Atendimento é criado por
+essa operação.
+
+O Total atual é calculado em centavos pela soma de `quantidade × preço unitário
+registrado` de todos os Lançamentos persistidos no Atendimento. O cálculo não usa
+o preço atual do catálogo e o valor é formatado em reais somente na interface.
+
 ## Persistência SQLite
 
 O banco operacional fica em `.local/dados/restaurante.sqlite3`, um diretório

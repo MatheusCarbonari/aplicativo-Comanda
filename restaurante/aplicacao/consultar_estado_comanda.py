@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
+from restaurante.aplicacao.usuarios_operacionais import (
+    PapelNaoPermitido,
+    UsuarioOperacionalInvalido,
+)
 from restaurante.persistencia.models import (
     Atendimento,
     ComandaFisica,
@@ -12,14 +16,6 @@ class EstadoComanda(StrEnum):
     DISPONIVEL = "DISPONIVEL"
     EM_ATENDIMENTO = "EM_ATENDIMENTO"
     NAO_ENCONTRADA = "NAO_ENCONTRADA"
-
-
-class UsuarioOperacionalInvalido(Exception):
-    pass
-
-
-class PapelNaoPermitido(Exception):
-    pass
 
 
 @dataclass(frozen=True)

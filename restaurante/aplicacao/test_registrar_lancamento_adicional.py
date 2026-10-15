@@ -1,0 +1,186 @@
+from django.test import TestCase
+
+from restaurante.aplicacao.registrar_lancamento_adicional import (
+    AtendimentoAbertoNaoEncontrado,
+    registrar_lancamento_adicional,
+)
+from restaurante.aplicacao.consultar_estado_comanda import (
+    PapelNaoPermitido,
+    UsuarioOperacionalInvalido,
+)
+from restaurante.aplicacao.registrar_primeiro_lancamento import (
+    ComandaNaoEncontrada,
+    ProdutoNaoEncontrado,
+)
+from restaurante.dominio.lancamentos import QuantidadeInvalida
+from restaurante.persistencia.models import (
+    Atendimento,
+    ComandaFisica,
+    Lancamento,
+    Produto,
+    UsuarioOperacional,
+)
+
+
+class RegistrarLancamentoAdicionalTests(TestCase):
+    def criar_cenario_aberto(self):
+        garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        comanda = ComandaFisica.objects.create(identificador="001")
+        atendimento = Atendimento.objects.create(comanda=comanda)
+        produto = Produto.objects.create(nome="Café", preco_centavos=600)
+        return garcom, atendimento, produto
+
+    def test_outro_garcom_adiciona_registro_independente_ao_atendimento(self):
+        garcom_1 = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        garcom_2 = UsuarioOperacional.objects.create(
+            nome="Garçom 2",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        comanda = ComandaFisica.objects.create(identificador="001")
+        atendimento = Atendimento.objects.create(comanda=comanda)
+        cafe = Produto.objects.create(nome="Café", preco_centavos=600)
+        Lancamento.objects.create(
+            atendimento=atendimento,
+            produto=cafe,
+            quantidade=1,
+            preco_unitario_centavos=600,
+            autor=garcom_1,
+        )
+
+        resultado = registrar_lancamento_adicional(
+            garcom_2.pk,
+            "001",
+            cafe.pk,
+            2,
+        )
+
+        lancamentos = list(atendimento.lancamentos.order_by("pk"))
+        self.assertEqual(Atendimento.objects.count(), 1)
+        self.assertEqual(len(lancamentos), 2)
+        self.assertNotEqual(lancamentos[0].pk, lancamentos[1].pk)
+        self.assertEqual(lancamentos[0].autor, garcom_1)
+        self.assertEqual(lancamentos[1].autor, garcom_2)
+        self.assertEqual(lancamentos[0].quantidade, 1)
+        self.assertEqual(lancamentos[1].quantidade, 2)
+        self.assertIsNotNone(lancamentos[1].horario)
+        self.assertEqual(resultado.atendimento_id, atendimento.pk)
+        self.assertEqual(resultado.lancamento_id, lancamentos[1].pk)
+        self.assertEqual(resultado.comanda, "001")
+        self.assertEqual(resultado.produto, "Café")
+        self.assertEqual(resultado.autor, "Garçom 2")
+        self.assertEqual(resultado.preco_unitario_centavos, 600)
+        self.assertEqual(resultado.total_centavos, 1800)
+
+    def test_preco_snapshot_e_total_usam_valores_dos_lancamentos(self):
+        garcom, atendimento, cafe = self.criar_cenario_aberto()
+        Lancamento.objects.create(
+            atendimento=atendimento,
+            produto=cafe,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=garcom,
+        )
+        cafe.preco_centavos = 700
+        cafe.save(update_fields=["preco_centavos"])
+
+        resultado = registrar_lancamento_adicional(
+            garcom.pk,
+            "001",
+            cafe.pk,
+            1,
+        )
+        cafe.preco_centavos = 900
+        cafe.save(update_fields=["preco_centavos"])
+
+        precos = list(
+            atendimento.lancamentos.order_by("pk").values_list(
+                "preco_unitario_centavos",
+                flat=True,
+            )
+        )
+        self.assertEqual(precos, [600, 700])
+        self.assertEqual(resultado.total_centavos, 1900)
+
+    def test_comanda_desconhecida_e_rejeitada_sem_criar_dados(self):
+        garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        ComandaFisica.objects.create(identificador="001")
+        produto = Produto.objects.create(nome="Café", preco_centavos=600)
+
+        for identificador in ("999", "1"):
+            with self.subTest(identificador=identificador):
+                with self.assertRaises(ComandaNaoEncontrada):
+                    registrar_lancamento_adicional(
+                        garcom.pk,
+                        identificador,
+                        produto.pk,
+                        1,
+                    )
+
+        self.assertEqual(Atendimento.objects.count(), 0)
+        self.assertEqual(Lancamento.objects.count(), 0)
+
+    def test_produto_ou_quantidade_invalida_nao_cria_lancamento(self):
+        garcom, atendimento, produto = self.criar_cenario_aberto()
+
+        with self.assertRaises(ProdutoNaoEncontrado):
+            registrar_lancamento_adicional(garcom.pk, "001", 999_999, 1)
+        for quantidade in (0, -1, "1.5", "abc", ""):
+            with self.subTest(quantidade=quantidade):
+                with self.assertRaises(QuantidadeInvalida):
+                    registrar_lancamento_adicional(
+                        garcom.pk,
+                        "001",
+                        produto.pk,
+                        quantidade,
+                    )
+
+        self.assertEqual(Atendimento.objects.get(), atendimento)
+        self.assertEqual(Lancamento.objects.count(), 0)
+
+    def test_caixa_ou_usuario_invalido_nao_pode_lancar(self):
+        caixa = UsuarioOperacional.objects.create(
+            nome="Caixa 1",
+            papel=UsuarioOperacional.Papel.CAIXA,
+        )
+
+        with self.assertRaises(PapelNaoPermitido):
+            registrar_lancamento_adicional(caixa.pk, "001", 1, 1)
+        for usuario_id in (999_999, "inválido", None):
+            with self.subTest(usuario_id=usuario_id):
+                with self.assertRaises(UsuarioOperacionalInvalido):
+                    registrar_lancamento_adicional(usuario_id, "001", 1, 1)
+
+        self.assertEqual(Atendimento.objects.count(), 0)
+        self.assertEqual(Lancamento.objects.count(), 0)
+
+    def test_sem_atendimento_aberto_rejeita_sem_criar_dados(self):
+        garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        comanda = ComandaFisica.objects.create(identificador="001")
+        atendimento_encerrado = Atendimento.objects.create(
+            comanda=comanda,
+            estado=Atendimento.Estado.ENCERRADO,
+        )
+        produto = Produto.objects.create(nome="Café", preco_centavos=600)
+
+        with self.assertRaises(AtendimentoAbertoNaoEncontrado):
+            registrar_lancamento_adicional(
+                garcom.pk,
+                "001",
+                produto.pk,
+                1,
+            )
+
+        self.assertEqual(Atendimento.objects.get(), atendimento_encerrado)
+        self.assertEqual(Lancamento.objects.count(), 0)

@@ -4,6 +4,9 @@ from django.test import TestCase
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
     registrar_primeiro_lancamento,
 )
+from restaurante.aplicacao.registrar_lancamento_adicional import (
+    registrar_lancamento_adicional,
+)
 from restaurante.persistencia.models import (
     Atendimento,
     ComandaFisica,
@@ -92,3 +95,45 @@ class LancamentoPersistenciaTests(TestCase):
 
         self.assertEqual(Atendimento.objects.count(), 0)
         self.assertEqual(Lancamento.objects.count(), 0)
+
+    def test_sqlite_preserva_produto_repetido_e_autores_no_mesmo_atendimento(self):
+        outro_garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 2",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        atendimento = Atendimento.objects.create(comanda=self.comanda)
+
+        registrar_lancamento_adicional(
+            self.garcom.pk,
+            "001",
+            self.produto.pk,
+            1,
+        )
+        registrar_lancamento_adicional(
+            outro_garcom.pk,
+            "001",
+            self.produto.pk,
+            2,
+        )
+
+        lancamentos = list(atendimento.lancamentos.order_by("pk"))
+        self.assertEqual(len(lancamentos), 2)
+        self.assertEqual(
+            [lancamento.produto for lancamento in lancamentos],
+            [self.produto, self.produto],
+        )
+        self.assertEqual(
+            [lancamento.autor for lancamento in lancamentos],
+            [self.garcom, outro_garcom],
+        )
+        self.assertEqual(
+            [lancamento.quantidade for lancamento in lancamentos],
+            [1, 2],
+        )
+        self.assertEqual(
+            [
+                lancamento.preco_unitario_centavos
+                for lancamento in lancamentos
+            ],
+            [2000, 2000],
+        )

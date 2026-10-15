@@ -2,9 +2,8 @@ from dataclasses import dataclass
 
 from django.db import IntegrityError, transaction
 
-from restaurante.aplicacao.consultar_estado_comanda import (
-    PapelNaoPermitido,
-    UsuarioOperacionalInvalido,
+from restaurante.aplicacao.usuarios_operacionais import (
+    buscar_garcom,
 )
 from restaurante.dominio.lancamentos import (
     QuantidadeInvalida,
@@ -15,7 +14,6 @@ from restaurante.persistencia.models import (
     ComandaFisica,
     Lancamento,
     Produto,
-    UsuarioOperacional,
 )
 
 
@@ -47,7 +45,7 @@ def registrar_primeiro_lancamento(
     produto_id: object,
     quantidade: object,
 ) -> ResultadoPrimeiroLancamento:
-    usuario = _buscar_garcom(usuario_operacional_id)
+    usuario = buscar_garcom(usuario_operacional_id)
     comanda = ComandaFisica.objects.filter(
         identificador=identificador_comanda
     ).first()
@@ -90,16 +88,3 @@ def registrar_primeiro_lancamento(
         quantidade=lancamento.quantidade,
         preco_unitario_centavos=lancamento.preco_unitario_centavos,
     )
-
-
-def _buscar_garcom(usuario_operacional_id: object) -> UsuarioOperacional:
-    try:
-        chave_usuario = int(usuario_operacional_id)
-    except (TypeError, ValueError) as erro:
-        raise UsuarioOperacionalInvalido from erro
-    usuario = UsuarioOperacional.objects.filter(pk=chave_usuario).first()
-    if usuario is None:
-        raise UsuarioOperacionalInvalido
-    if usuario.papel != UsuarioOperacional.Papel.GARCOM:
-        raise PapelNaoPermitido
-    return usuario
