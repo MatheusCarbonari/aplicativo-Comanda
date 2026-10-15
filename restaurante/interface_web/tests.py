@@ -3,6 +3,8 @@ from django.test import TestCase
 from restaurante.persistencia.models import (
     Atendimento,
     ComandaFisica,
+    Lancamento,
+    Produto,
     UsuarioOperacional,
 )
 
@@ -201,3 +203,102 @@ class ConsultaComandaInterfaceTests(TestCase):
             "/?selecao_invalida=1",
             fetch_redirect_response=False,
         )
+
+
+class PrimeiroLancamentoInterfaceTests(TestCase):
+    def setUp(self):
+        self.garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        self.caixa = UsuarioOperacional.objects.create(
+            nome="Caixa 1",
+            papel=UsuarioOperacional.Papel.CAIXA,
+        )
+        self.comanda = ComandaFisica.objects.create(identificador="001")
+        self.produto = Produto.objects.create(
+            nome="Batata frita",
+            preco_centavos=2000,
+        )
+
+    def selecionar(self, usuario: UsuarioOperacional) -> None:
+        self.client.post(
+            "/usuarios/selecionar/",
+            {"usuario_id": usuario.pk},
+        )
+
+    def test_garcom_ve_formulario_de_primeiro_lancamento(self):
+        self.selecionar(self.garcom)
+
+        resposta = self.client.get("/garcom/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Registrar primeiro lançamento")
+        self.assertContains(resposta, "Batata frita")
+        self.assertContains(resposta, 'name="quantidade"', html=False)
+
+    def test_caixa_nao_ve_nem_pode_usar_acao_de_lancamento(self):
+        self.selecionar(self.caixa)
+
+        pagina = self.client.get("/caixa/")
+        resposta = self.client.post(
+            "/lancamentos/primeiro/",
+            {
+                "identificador_comanda": "001",
+                "produto_id": self.produto.pk,
+                "quantidade": "1",
+            },
+        )
+
+        self.assertNotContains(pagina, "Registrar primeiro lançamento")
+        self.assertEqual(resposta.status_code, 403)
+        self.assertEqual(Atendimento.objects.count(), 0)
+        self.assertEqual(Lancamento.objects.count(), 0)
+
+    def test_lancamento_valido_mostra_dados_criados_e_total_em_brl(self):
+        self.selecionar(self.garcom)
+
+        resposta = self.client.post(
+            "/lancamentos/primeiro/",
+            {
+                "identificador_comanda": "001",
+                "produto_id": self.produto.pk,
+                "quantidade": "2",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Lançamento registrado")
+        self.assertContains(resposta, "Comanda 001")
+        self.assertContains(resposta, "Batata frita")
+        self.assertContains(resposta, "Quantidade: 2")
+        self.assertContains(resposta, "R$ 40,00")
+        self.assertContains(resposta, "Em atendimento")
+        self.assertEqual(Atendimento.objects.count(), 1)
+        self.assertEqual(Lancamento.objects.count(), 1)
+
+    def test_entrada_invalida_exibe_erro_sem_criar_estado_parcial(self):
+        self.selecionar(self.garcom)
+        cenarios = (
+            (
+                {"identificador_comanda": "999", "produto_id": self.produto.pk, "quantidade": "1"},
+                "Comanda não encontrada",
+            ),
+            (
+                {"identificador_comanda": "001", "produto_id": "999999", "quantidade": "1"},
+                "Produto não encontrado",
+            ),
+            (
+                {"identificador_comanda": "001", "produto_id": self.produto.pk, "quantidade": "1.5"},
+                "Informe uma quantidade inteira positiva",
+            ),
+        )
+
+        for dados, mensagem in cenarios:
+            with self.subTest(mensagem=mensagem):
+                resposta = self.client.post("/lancamentos/primeiro/", dados)
+
+                self.assertEqual(resposta.status_code, 400)
+                self.assertContains(resposta, mensagem, status_code=400)
+                self.assertEqual(Atendimento.objects.count(), 0)
+                self.assertEqual(Lancamento.objects.count(), 0)

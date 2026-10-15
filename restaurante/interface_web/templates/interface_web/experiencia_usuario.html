@@ -14,6 +14,9 @@
         <h1 id="titulo-principal">{{ titulo }}</h1>
         <p class="descricao">{{ descricao }}</p>
         {% include "interface_web/formulario_consulta_comanda.html" %}
+        {% if pode_lancar %}
+          {% include "interface_web/formulario_primeiro_lancamento.html" %}
+        {% endif %}
         <form method="post" action="{% url 'trocar_usuario' %}">
           {% csrf_token %}
           <button type="submit">Trocar usuário</button>

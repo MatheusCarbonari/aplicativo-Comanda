@@ -1,0 +1,37 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lançamento registrado | Comandas do restaurante</title>
+    <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
+  </head>
+  <body>
+    <main class="pagina-inicial">
+      <section class="cartao" aria-labelledby="titulo-principal">
+        <p class="rotulo">Em atendimento</p>
+        <h1 id="titulo-principal">Lançamento registrado</h1>
+        <dl class="resumo-lancamento">
+          <div>
+            <dt>Comanda</dt>
+            <dd>Comanda {{ resultado.comanda }}</dd>
+          </div>
+          <div>
+            <dt>Produto</dt>
+            <dd>{{ resultado.produto }}</dd>
+          </div>
+          <div>
+            <dt>Quantidade</dt>
+            <dd>Quantidade: {{ resultado.quantidade }}</dd>
+          </div>
+          <div>
+            <dt>Total</dt>
+            <dd>{{ total_formatado }}</dd>
+          </div>
+        </dl>
+        <a class="acao-secundaria" href="{% url 'experiencia_garcom' %}">Voltar</a>
+      </section>
+    </main>
+  </body>
+</html>

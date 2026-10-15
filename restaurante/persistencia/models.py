@@ -43,3 +43,32 @@ class Atendimento(models.Model):
                 name="atendimento_aberto_unico_por_comanda",
             )
         ]
+
+
+class Lancamento(models.Model):
+    atendimento = models.ForeignKey(
+        Atendimento,
+        on_delete=models.PROTECT,
+        related_name="lancamentos",
+    )
+    produto = models.ForeignKey(
+        Produto,
+        on_delete=models.PROTECT,
+        related_name="lancamentos",
+    )
+    quantidade = models.PositiveIntegerField()
+    preco_unitario_centavos = models.PositiveIntegerField()
+    autor = models.ForeignKey(
+        UsuarioOperacional,
+        on_delete=models.PROTECT,
+        related_name="lancamentos_realizados",
+    )
+    horario = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(quantidade__gt=0),
+                name="lancamento_quantidade_positiva",
+            )
+        ]

@@ -80,6 +80,19 @@ O modelo Atendimento representa somente os estados `ABERTO` e `ENCERRADO` nesta
 etapa. Uma restrição condicional no SQLite permite vários atendimentos encerrados,
 mas impede mais de um Atendimento aberto para a mesma Comanda física.
 
+## Registrar o primeiro lançamento
+
+Na experiência do Garçom, o formulário de primeiro lançamento recebe o
+Identificador da comanda, um Produto do catálogo e uma quantidade inteira
+positiva. A operação cria o Atendimento aberto e o Lançamento na mesma transação
+curta. Caixa não recebe nem pode executar essa ação.
+
+O Lançamento preserva o Produto, a quantidade, o preço unitário vigente em
+centavos, o Garçom responsável e o horário definido pelo backend. Alterações
+posteriores no preço do Produto não modificam o preço registrado. A proteção de
+unicidade do Atendimento aberto permanece no SQLite; uma violação concorrente é
+apresentada como Comanda já em atendimento e a transação não deixa dados parciais.
+
 ## Persistência SQLite
 
 O banco operacional fica em `.local/dados/restaurante.sqlite3`, um diretório
@@ -102,9 +115,9 @@ O projeto mantém um único processo implantável. As responsabilidades serão s
 
 | Área | Representação atual |
 | --- | --- |
-| Domínio | Ainda não criada; este ticket não possui regras de negócio. |
-| Aplicação/casos de uso | Consulta do estado da Comanda física em `aplicacao`. |
-| Persistência | Configuração do SQLite e modelos persistidos, incluindo Atendimento, em `persistencia`. |
+| Domínio | Validação da quantidade inteira positiva de um Lançamento em `dominio`. |
+| Aplicação/casos de uso | Consulta da Comanda física e registro transacional do primeiro Lançamento em `aplicacao`. |
+| Persistência | Configuração do SQLite e modelos persistidos, incluindo Atendimento e Lançamento, em `persistencia`. |
 | Interface web | Páginas, rotas, templates e recursos estáticos em `interface_web`. |
 | Ferramentas administrativas | Entrada pelo `manage.py` e comando explícito `carregar_dados_iniciais`. |
 | Infraestrutura | Configuração e entradas ASGI/WSGI em `infraestrutura`. |

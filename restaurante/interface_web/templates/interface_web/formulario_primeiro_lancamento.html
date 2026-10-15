@@ -1,0 +1,36 @@
+<section class="secao-operacional" aria-labelledby="titulo-primeiro-lancamento">
+  <h2 id="titulo-primeiro-lancamento">Registrar primeiro lançamento</h2>
+  {% if erro_lancamento %}
+    <p class="aviso" role="alert">{{ erro_lancamento }}</p>
+  {% endif %}
+  <form class="formulario-operacional" method="post" action="{% url 'registrar_primeiro_lancamento' %}">
+    {% csrf_token %}
+    <label for="identificador-lancamento">Identificador da comanda</label>
+    <input
+      id="identificador-lancamento"
+      name="identificador_comanda"
+      autocomplete="off"
+      required
+    >
+
+    <label for="produto-lancamento">Produto</label>
+    <select id="produto-lancamento" name="produto_id" required>
+      <option value="">Selecione um produto</option>
+      {% for produto in produtos %}
+        <option value="{{ produto.pk }}">{{ produto.nome }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="quantidade-lancamento">Quantidade</label>
+    <input
+      id="quantidade-lancamento"
+      name="quantidade"
+      type="number"
+      min="1"
+      step="1"
+      inputmode="numeric"
+      required
+    >
+    <button type="submit">Confirmar lançamento</button>
+  </form>
+</section>
