@@ -25,6 +25,9 @@
           {% if acoes_cancelamento %}
             {% include "interface_web/formulario_cancelamento_lancamento.html" %}
           {% endif %}
+          {% if historico_cancelamentos %}
+            {% include "interface_web/historico_cancelamentos.html" %}
+          {% endif %}
         {% endif %}
         <form method="post" action="{% url 'trocar_usuario' %}">
           {% csrf_token %}

@@ -1,0 +1,18 @@
+<section id="historico-cancelamentos" class="secao-operacional" aria-labelledby="titulo-historico-cancelamentos">
+  <h2 id="titulo-historico-cancelamentos">Lançamentos cancelados</h2>
+  {% for item in historico_cancelamentos %}
+    <article>
+      <p><strong>{{ item.produto }}</strong></p>
+      <p>Quantidade: {{ item.quantidade }}</p>
+      <p>Preço unitário original: {{ item.preco_unitario }}</p>
+      <p>Autor do lançamento: {{ item.autor_lancamento }}</p>
+      <p>Lançado em: {{ item.horario_lancamento }}</p>
+      <p>Autor do cancelamento: {{ item.autor_cancelamento }}</p>
+      <p>Cancelado em: {{ item.horario_cancelamento }}</p>
+      <p>Motivo: {{ item.motivo }}</p>
+      {% if item.descricao %}
+        <p>Descrição: {{ item.descricao }}</p>
+      {% endif %}
+    </article>
+  {% endfor %}
+</section>

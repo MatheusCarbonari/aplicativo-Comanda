@@ -1,6 +1,7 @@
 """Páginas renderizadas pela interface web."""
 
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect, render
@@ -50,6 +51,7 @@ from restaurante.persistencia.models import (
 
 
 CHAVE_USUARIO_OPERACIONAL = "usuario_operacional_id"
+FUSO_HORARIO_APRESENTACAO = ZoneInfo("America/Sao_Paulo")
 
 
 def _buscar_usuario(identificador: object) -> UsuarioOperacional | None:
@@ -84,6 +86,12 @@ def _formatar_centavos_brl(valor: int) -> str:
     reais, centavos = divmod(valor, 100)
     reais_formatados = f"{reais:,}".replace(",", ".")
     return f"R$ {reais_formatados},{centavos:02d}"
+
+
+def _formatar_horario_local(valor) -> str:
+    return valor.astimezone(FUSO_HORARIO_APRESENTACAO).strftime(
+        "%d/%m/%Y %H:%M"
+    )
 
 
 def pagina_inicial(request: HttpRequest) -> HttpResponse:
@@ -153,6 +161,7 @@ def consultar_comanda(request: HttpRequest) -> HttpResponse:
         and usuario_atual.papel == UsuarioOperacional.Papel.GARCOM
     )
     acoes_cancelamento = []
+    historico_cancelamentos = []
     total_formatado = None
     if pode_lancar_adicional:
         atendimento = Atendimento.objects.filter(
@@ -168,6 +177,31 @@ def consultar_comanda(request: HttpRequest) -> HttpResponse:
             acoes_cancelamento = [
                 {"lancamento": lancamento, "chave": str(uuid4())}
                 for lancamento in lancamentos_validos
+            ]
+            lancamentos_cancelados = (
+                atendimento.lancamentos.filter(cancelamento__isnull=False)
+                .select_related("produto", "autor", "cancelamento__autor")
+                .order_by("horario", "pk")
+            )
+            historico_cancelamentos = [
+                {
+                    "produto": lancamento.produto.nome,
+                    "quantidade": lancamento.quantidade,
+                    "preco_unitario": _formatar_centavos_brl(
+                        lancamento.preco_unitario_centavos
+                    ),
+                    "autor_lancamento": lancamento.autor.nome,
+                    "horario_lancamento": _formatar_horario_local(
+                        lancamento.horario
+                    ),
+                    "autor_cancelamento": lancamento.cancelamento.autor.nome,
+                    "horario_cancelamento": _formatar_horario_local(
+                        lancamento.cancelamento.horario
+                    ),
+                    "motivo": lancamento.cancelamento.get_motivo_display(),
+                    "descricao": lancamento.cancelamento.descricao,
+                }
+                for lancamento in lancamentos_cancelados
             ]
             total_formatado = _formatar_centavos_brl(
                 calcular_total_atendimento(
@@ -188,6 +222,7 @@ def consultar_comanda(request: HttpRequest) -> HttpResponse:
             "produtos": Produto.objects.order_by("nome"),
             "chave_idempotencia": str(uuid4()),
             "acoes_cancelamento": acoes_cancelamento,
+            "historico_cancelamentos": historico_cancelamentos,
             "motivos_cancelamento": CancelamentoLancamento.Motivo.choices,
             "total_formatado": total_formatado,
         },

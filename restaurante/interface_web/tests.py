@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from django.db import OperationalError, connection
@@ -694,3 +695,184 @@ class CancelamentoLancamentoInterfaceTests(TestCase):
 
         self.assertContains(resposta, "R$ 0,00")
         self.assertNotContains(resposta, "Cancelar lançamento")
+
+
+class HistoricoCancelamentosInterfaceTests(TestCase):
+    def setUp(self):
+        self.garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        self.outro_garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 2",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        self.comanda = ComandaFisica.objects.create(identificador="001")
+        self.atendimento = Atendimento.objects.create(comanda=self.comanda)
+        self.cafe = Produto.objects.create(nome="Café", preco_centavos=600)
+        self.pizza = Produto.objects.create(nome="Pizza", preco_centavos=4500)
+
+    def selecionar_garcom(self):
+        self.client.post(
+            "/usuarios/selecionar/",
+            {"usuario_id": self.garcom.pk},
+        )
+
+    def consultar(self):
+        return self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+    def test_separa_consumos_validos_dos_cancelados_e_calcula_total(self):
+        cancelado = Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.cafe,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.pizza,
+            quantidade=1,
+            preco_unitario_centavos=4500,
+            autor=self.outro_garcom,
+        )
+        CancelamentoLancamento.objects.create(
+            lancamento=cancelado,
+            motivo=CancelamentoLancamento.Motivo.DUPLICADO,
+            descricao="",
+            autor=self.outro_garcom,
+        )
+        self.selecionar_garcom()
+
+        resposta = self.consultar()
+
+        html = resposta.content.decode()
+        consumos_validos = html.split('id="consumos-validos"', 1)[1].split(
+            "</section>", 1
+        )[0]
+        historico = html.split('id="historico-cancelamentos"', 1)[1].split(
+            "</section>", 1
+        )[0]
+        self.assertIn("Pizza", consumos_validos)
+        self.assertNotIn("Café", consumos_validos)
+        self.assertIn("Café", historico)
+        self.assertNotIn("Pizza", historico)
+        self.assertContains(resposta, "R$ 45,00")
+
+    def test_historico_mostra_dados_e_horarios_em_sao_paulo(self):
+        lancamento = Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.cafe,
+            quantidade=3,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        cancelamento = CancelamentoLancamento.objects.create(
+            lancamento=lancamento,
+            motivo=CancelamentoLancamento.Motivo.OUTRO,
+            descricao="Cliente mudou de ideia",
+            autor=self.outro_garcom,
+        )
+        Lancamento.objects.filter(pk=lancamento.pk).update(
+            horario=datetime(2026, 1, 15, 15, 30, tzinfo=UTC)
+        )
+        CancelamentoLancamento.objects.filter(pk=cancelamento.pk).update(
+            horario=datetime(2026, 1, 15, 16, 45, tzinfo=UTC)
+        )
+        self.selecionar_garcom()
+
+        resposta = self.consultar()
+
+        self.assertContains(resposta, "Café")
+        self.assertContains(resposta, "Quantidade: 3")
+        self.assertContains(resposta, "Preço unitário original: R$ 6,00")
+        self.assertContains(resposta, "Autor do lançamento: Garçom 1")
+        self.assertContains(resposta, "Lançado em: 15/01/2026 12:30")
+        self.assertContains(resposta, "Autor do cancelamento: Garçom 2")
+        self.assertContains(resposta, "Cancelado em: 15/01/2026 13:45")
+        self.assertContains(resposta, "Motivo: Outro")
+        self.assertContains(resposta, "Descrição: Cliente mudou de ideia")
+
+    def test_historico_mostra_multiplos_cancelamentos(self):
+        cafe = Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.cafe,
+            quantidade=1,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        pizza = Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.pizza,
+            quantidade=2,
+            preco_unitario_centavos=4500,
+            autor=self.outro_garcom,
+        )
+        CancelamentoLancamento.objects.create(
+            lancamento=cafe,
+            motivo=CancelamentoLancamento.Motivo.DUPLICADO,
+            descricao="",
+            autor=self.outro_garcom,
+        )
+        CancelamentoLancamento.objects.create(
+            lancamento=pizza,
+            motivo=CancelamentoLancamento.Motivo.PRODUTO_INCORRETO,
+            descricao="Item escolhido incorretamente",
+            autor=self.garcom,
+        )
+        self.selecionar_garcom()
+
+        resposta = self.consultar()
+
+        html = resposta.content.decode()
+        historico = html.split('id="historico-cancelamentos"', 1)[1].split(
+            "</section>", 1
+        )[0]
+        self.assertIn("Café", historico)
+        self.assertIn("Pizza", historico)
+        self.assertIn("Motivo: Duplicado", historico)
+        self.assertIn("Motivo: Produto incorreto", historico)
+        self.assertEqual(historico.count("Descrição:"), 1)
+
+    def test_todos_cancelados_mantem_atendimento_aberto_e_total_zero(self):
+        lancamento = Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.cafe,
+            quantidade=1,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        CancelamentoLancamento.objects.create(
+            lancamento=lancamento,
+            motivo=CancelamentoLancamento.Motivo.DESISTENCIA,
+            descricao="",
+            autor=self.garcom,
+        )
+        self.selecionar_garcom()
+
+        resposta = self.consultar()
+
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.estado, Atendimento.Estado.ABERTO)
+        self.assertContains(resposta, "Em atendimento")
+        self.assertContains(resposta, "R$ 0,00")
+        self.assertContains(resposta, "Lançamentos cancelados")
+        self.assertNotContains(resposta, 'id="consumos-validos"', html=False)
+
+    def test_sem_cancelamentos_nao_exibe_secao_vazia(self):
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.cafe,
+            quantidade=1,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        self.selecionar_garcom()
+
+        resposta = self.consultar()
+
+        self.assertContains(resposta, "Consumos válidos")
+        self.assertNotContains(resposta, "Lançamentos cancelados")
