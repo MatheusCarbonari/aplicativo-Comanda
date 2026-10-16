@@ -4,7 +4,6 @@ from django.test import TestCase
 
 from restaurante.aplicacao.idempotencia import ConflitoIdempotencia
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
-    ComandaEmAtendimento,
     ComandaNaoEncontrada,
     ProdutoNaoEncontrado,
     registrar_primeiro_lancamento,
@@ -233,23 +232,23 @@ class RegistrarPrimeiroLancamentoTests(TestCase):
         self.assertEqual(Atendimento.objects.count(), 0)
         self.assertEqual(Lancamento.objects.count(), 0)
 
-    def test_comanda_com_atendimento_aberto_rejeita_primeiro_lancamento(self):
+    def test_nova_intencao_do_fluxo_inicial_preserva_lancamento_no_aberto(self):
         garcom = UsuarioOperacional.objects.create(
             nome="Garçom 1",
             papel=UsuarioOperacional.Papel.GARCOM,
         )
         comanda = ComandaFisica.objects.create(identificador="001")
-        Atendimento.objects.create(comanda=comanda)
+        atendimento = Atendimento.objects.create(comanda=comanda)
         produto = Produto.objects.create(nome="Café", preco_centavos=600)
 
-        with self.assertRaises(ComandaEmAtendimento):
-            registrar_primeiro_lancamento(
-                garcom.pk,
-                "001",
-                produto.pk,
-                1,
-                "comanda-em-atendimento",
-            )
+        resultado = registrar_primeiro_lancamento(
+            garcom.pk,
+            "001",
+            produto.pk,
+            1,
+            "disputa-ja-confirmada",
+        )
 
         self.assertEqual(Atendimento.objects.count(), 1)
-        self.assertEqual(Lancamento.objects.count(), 0)
+        self.assertEqual(resultado.atendimento_id, atendimento.pk)
+        self.assertEqual(Lancamento.objects.count(), 1)

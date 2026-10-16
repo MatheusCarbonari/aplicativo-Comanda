@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from django.db import OperationalError, connection
 from django.test import TestCase
 
 from restaurante.persistencia.models import (
@@ -361,6 +362,36 @@ class PrimeiroLancamentoInterfaceTests(TestCase):
                 self.assertContains(resposta, mensagem, status_code=400)
                 self.assertEqual(Atendimento.objects.count(), 0)
                 self.assertEqual(Lancamento.objects.count(), 0)
+
+    def test_contencao_sqlite_persistente_informa_indisponibilidade_temporaria(
+        self,
+    ):
+        self.selecionar(self.garcom)
+
+        def conter_insercao(execute, sql, params, many, context):
+            if 'insert into "persistencia_atendimento"' in sql.lower():
+                raise OperationalError("database is locked")
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(conter_insercao):
+            resposta = self.client.post(
+                "/lancamentos/primeiro/",
+                {
+                    "identificador_comanda": "001",
+                    "produto_id": self.produto.pk,
+                    "quantidade": "1",
+                    "chave_idempotencia": "contencao-interface",
+                },
+            )
+
+        self.assertEqual(resposta.status_code, 503)
+        self.assertContains(
+            resposta,
+            "Banco ocupado temporariamente. Tente novamente",
+            status_code=503,
+        )
+        self.assertEqual(Atendimento.objects.count(), 0)
+        self.assertEqual(Lancamento.objects.count(), 0)
 
 
 class LancamentoAdicionalInterfaceTests(TestCase):

@@ -18,8 +18,8 @@ from restaurante.aplicacao.idempotencia import (
     ConflitoIdempotencia,
 )
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
-    ComandaEmAtendimento,
     ComandaNaoEncontrada,
+    PersistenciaTemporariamenteIndisponivel,
     ProdutoNaoEncontrado,
     registrar_primeiro_lancamento as executar_primeiro_lancamento,
 )
@@ -174,18 +174,29 @@ def registrar_primeiro_lancamento(request: HttpRequest) -> HttpResponse:
             ),
             status=409,
         )
+    except PersistenciaTemporariamenteIndisponivel:
+        usuario = _buscar_usuario(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL)
+        )
+        return render(
+            request,
+            "interface_web/experiencia_usuario.html",
+            _contexto_garcom(
+                usuario,
+                "Banco ocupado temporariamente. Tente novamente",
+            ),
+            status=503,
+        )
     except (
         ComandaNaoEncontrada,
         ProdutoNaoEncontrado,
         QuantidadeInvalida,
-        ComandaEmAtendimento,
         ChaveIdempotenciaInvalida,
     ) as erro:
         mensagens = {
             ComandaNaoEncontrada: "Comanda não encontrada",
             ProdutoNaoEncontrado: "Produto não encontrado",
             QuantidadeInvalida: "Informe uma quantidade inteira positiva",
-            ComandaEmAtendimento: "Comanda já está em atendimento",
             ChaveIdempotenciaInvalida: (
                 "Não foi possível identificar esta tentativa"
             ),

@@ -90,8 +90,21 @@ curta. Caixa não recebe nem pode executar essa ação.
 O Lançamento preserva o Produto, a quantidade, o preço unitário vigente em
 centavos, o Garçom responsável e o horário definido pelo backend. Alterações
 posteriores no preço do Produto não modificam o preço registrado. A proteção de
-unicidade do Atendimento aberto permanece no SQLite; uma violação concorrente é
-apresentada como Comanda já em atendimento e a transação não deixa dados parciais.
+unicidade do Atendimento aberto permanece no SQLite. Quando duas primeiras
+solicitações observam simultaneamente uma Comanda disponível, somente uma cria o
+Atendimento; a outra reconhece especificamente a violação dessa unicidade,
+localiza o Atendimento vencedor e registra nele seu Lançamento. Uma solicitação
+enviada pelo fluxo de primeiro Lançamento também converge dessa forma se a
+abertura concorrente já tiver acabado de confirmar; o fluxo de Lançamento
+adicional continua separado para a operação normal de uma Comanda em atendimento.
+
+O SQLite aguarda contenções de escrita pelo tempo configurado na conexão. Se
+ainda devolver `SQLITE_BUSY` ou `SQLITE_LOCKED`, o primeiro Lançamento faz somente
+uma nova tentativa, totalizando no máximo duas. Cada tentativa envolve a mesma
+chave idempotente e uma transação completa: se a primeira foi revertida, nada
+parcial permanece; se chegou a confirmar, a repetida recupera o resultado sem
+duplicar o Lançamento. Persistindo a contenção, a interface informa
+indisponibilidade temporária para que o Garçom tente novamente.
 
 Quando a consulta encontra uma Comanda em atendimento, a interface do Garçom
 permite adicionar outro consumo ao Atendimento aberto existente. Cada confirmação

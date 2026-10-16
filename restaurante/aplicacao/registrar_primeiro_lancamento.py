@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass
 
-from django.db import IntegrityError
+from django.db import IntegrityError, OperationalError, transaction
 
 from restaurante.aplicacao.idempotencia import executar_idempotente
 from restaurante.aplicacao.usuarios_operacionais import (
@@ -17,6 +17,10 @@ from restaurante.persistencia.models import (
     Lancamento,
     Produto,
 )
+from restaurante.persistencia.conflitos_sqlite import (
+    e_conflito_de_abertura,
+    e_contencao_transitoria,
+)
 
 
 class ComandaNaoEncontrada(Exception):
@@ -27,11 +31,12 @@ class ProdutoNaoEncontrado(Exception):
     pass
 
 
-class ComandaEmAtendimento(Exception):
+class PersistenciaTemporariamenteIndisponivel(Exception):
     pass
 
 
 OPERACAO_REGISTRAR_PRIMEIRO_LANCAMENTO = "REGISTRAR_PRIMEIRO_LANCAMENTO"
+MAXIMO_TENTATIVAS_CONTENCAO = 2
 
 
 @dataclass(frozen=True)
@@ -63,7 +68,6 @@ def registrar_primeiro_lancamento(
         "produto_id": chave_produto,
         "quantidade": quantidade_validada,
     }
-
     def executar() -> dict[str, object]:
         usuario = buscar_garcom(chave_usuario)
         comanda = ComandaFisica.objects.filter(
@@ -74,15 +78,18 @@ def registrar_primeiro_lancamento(
         produto = Produto.objects.filter(pk=chave_produto).first()
         if produto is None:
             raise ProdutoNaoEncontrado
-        if Atendimento.objects.filter(
-            comanda=comanda,
-            estado=Atendimento.Estado.ABERTO,
-        ).exists():
-            raise ComandaEmAtendimento
         try:
-            atendimento = Atendimento.objects.create(comanda=comanda)
+            with transaction.atomic():
+                atendimento = Atendimento.objects.create(comanda=comanda)
         except IntegrityError as erro:
-            raise ComandaEmAtendimento from erro
+            if not e_conflito_de_abertura(erro):
+                raise
+            atendimento = Atendimento.objects.filter(
+                comanda=comanda,
+                estado=Atendimento.Estado.ABERTO,
+            ).first()
+            if atendimento is None:
+                raise
         lancamento = Lancamento.objects.create(
             atendimento=atendimento,
             produto=produto,
@@ -101,10 +108,18 @@ def registrar_primeiro_lancamento(
             )
         )
 
-    resultado = executar_idempotente(
-        chave=chave_idempotencia,
-        operacao=OPERACAO_REGISTRAR_PRIMEIRO_LANCAMENTO,
-        conteudo=conteudo,
-        executar=executar,
-    )
+    for tentativa in range(MAXIMO_TENTATIVAS_CONTENCAO):
+        try:
+            resultado = executar_idempotente(
+                chave=chave_idempotencia,
+                operacao=OPERACAO_REGISTRAR_PRIMEIRO_LANCAMENTO,
+                conteudo=conteudo,
+                executar=executar,
+            )
+            break
+        except OperationalError as erro:
+            if not e_contencao_transitoria(erro):
+                raise
+            if tentativa + 1 == MAXIMO_TENTATIVAS_CONTENCAO:
+                raise PersistenciaTemporariamenteIndisponivel from erro
     return ResultadoPrimeiroLancamento(**resultado)

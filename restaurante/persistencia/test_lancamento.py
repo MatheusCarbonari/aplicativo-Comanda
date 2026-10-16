@@ -1,7 +1,14 @@
-from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db import (
+    DatabaseError,
+    IntegrityError,
+    OperationalError,
+    connection,
+    transaction,
+)
 from django.test import TestCase
 
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
+    PersistenciaTemporariamenteIndisponivel,
     registrar_primeiro_lancamento,
 )
 from restaurante.aplicacao.registrar_lancamento_adicional import (
@@ -12,6 +19,7 @@ from restaurante.persistencia.models import (
     ComandaFisica,
     Lancamento,
     Produto,
+    RegistroIdempotencia,
     UsuarioOperacional,
 )
 
@@ -98,6 +106,80 @@ class LancamentoPersistenciaTests(TestCase):
 
         self.assertEqual(Atendimento.objects.count(), 0)
         self.assertEqual(Lancamento.objects.count(), 0)
+
+    def test_integrity_error_nao_relacionado_ao_indice_de_abertura_e_propagado(
+        self,
+    ):
+        def falhar_na_insercao(execute, sql, params, many, context):
+            if 'insert into "persistencia_atendimento"' in sql.lower():
+                raise IntegrityError("constraint simulada do atendimento")
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(falhar_na_insercao):
+            with self.assertRaisesRegex(
+                IntegrityError,
+                "constraint simulada do atendimento",
+            ):
+                registrar_primeiro_lancamento(
+                    self.garcom.pk,
+                    "001",
+                    self.produto.pk,
+                    1,
+                    "integridade-atendimento",
+                )
+
+        self.assertEqual(Atendimento.objects.count(), 0)
+        self.assertEqual(Lancamento.objects.count(), 0)
+
+    def test_contencao_sqlite_transitoria_repete_sem_duplicar(self):
+        tentativas = 0
+
+        def conter_primeira_insercao(execute, sql, params, many, context):
+            nonlocal tentativas
+            if 'insert into "persistencia_atendimento"' in sql.lower():
+                tentativas += 1
+                if tentativas == 1:
+                    raise OperationalError("database is locked")
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(conter_primeira_insercao):
+            resultado = registrar_primeiro_lancamento(
+                self.garcom.pk,
+                "001",
+                self.produto.pk,
+                1,
+                "contencao-transitoria",
+            )
+
+        self.assertEqual(tentativas, 2)
+        self.assertEqual(Atendimento.objects.get().pk, resultado.atendimento_id)
+        self.assertEqual(Lancamento.objects.get().pk, resultado.lancamento_id)
+        self.assertEqual(RegistroIdempotencia.objects.count(), 1)
+
+    def test_contencao_sqlite_persistente_falha_sem_estado_parcial(self):
+        tentativas = 0
+
+        def conter_insercao(execute, sql, params, many, context):
+            nonlocal tentativas
+            if 'insert into "persistencia_atendimento"' in sql.lower():
+                tentativas += 1
+                raise OperationalError("database is locked")
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(conter_insercao):
+            with self.assertRaises(PersistenciaTemporariamenteIndisponivel):
+                registrar_primeiro_lancamento(
+                    self.garcom.pk,
+                    "001",
+                    self.produto.pk,
+                    1,
+                    "contencao-persistente",
+                )
+
+        self.assertEqual(tentativas, 2)
+        self.assertEqual(Atendimento.objects.count(), 0)
+        self.assertEqual(Lancamento.objects.count(), 0)
+        self.assertEqual(RegistroIdempotencia.objects.count(), 0)
 
     def test_sqlite_preserva_produto_repetido_e_autores_no_mesmo_atendimento(self):
         outro_garcom = UsuarioOperacional.objects.create(
