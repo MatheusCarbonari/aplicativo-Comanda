@@ -1,0 +1,21 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lançamento cancelado | Comandas do restaurante</title>
+    <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
+  </head>
+  <body>
+    <main class="pagina-inicial">
+      <section class="cartao" aria-labelledby="titulo-principal">
+        <p class="rotulo">Cancelamento confirmado</p>
+        <h1 id="titulo-principal">Lançamento cancelado</h1>
+        <p>O Lançamento {{ resultado.lancamento_id }} foi cancelado integralmente.</p>
+        <p>Total atual: <strong>{{ total_formatado }}</strong></p>
+        <a class="acao-secundaria" href="{% url 'experiencia_garcom' %}">Voltar</a>
+      </section>
+    </main>
+  </body>
+</html>

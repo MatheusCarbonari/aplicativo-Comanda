@@ -7,6 +7,17 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
+from restaurante.aplicacao.cancelar_lancamento import (
+    AtendimentoEncerrado,
+    DescricaoCancelamentoInvalida,
+    LancamentoJaCancelado,
+    LancamentoNaoEncontrado,
+    MotivoCancelamentoInvalido,
+    cancelar_lancamento as executar_cancelamento_lancamento,
+)
+from restaurante.aplicacao.contencao_persistencia import (
+    PersistenciaTemporariamenteIndisponivel,
+)
 from restaurante.aplicacao.consultar_estado_comanda import (
     EstadoComanda,
     PapelNaoPermitido,
@@ -19,7 +30,6 @@ from restaurante.aplicacao.idempotencia import (
 )
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
     ComandaNaoEncontrada,
-    PersistenciaTemporariamenteIndisponivel,
     ProdutoNaoEncontrado,
     registrar_primeiro_lancamento as executar_primeiro_lancamento,
 )
@@ -27,8 +37,16 @@ from restaurante.aplicacao.registrar_lancamento_adicional import (
     AtendimentoAbertoNaoEncontrado,
     registrar_lancamento_adicional as executar_lancamento_adicional,
 )
-from restaurante.dominio.lancamentos import QuantidadeInvalida
-from restaurante.persistencia.models import Produto, UsuarioOperacional
+from restaurante.dominio.lancamentos import (
+    QuantidadeInvalida,
+    calcular_total_atendimento,
+)
+from restaurante.persistencia.models import (
+    Atendimento,
+    CancelamentoLancamento,
+    Produto,
+    UsuarioOperacional,
+)
 
 
 CHAVE_USUARIO_OPERACIONAL = "usuario_operacional_id"
@@ -129,20 +147,49 @@ def consultar_comanda(request: HttpRequest) -> HttpResponse:
     usuario_atual = _buscar_usuario(
         request.session.get(CHAVE_USUARIO_OPERACIONAL)
     )
+    pode_lancar_adicional = (
+        resultado.estado == EstadoComanda.EM_ATENDIMENTO
+        and usuario_atual is not None
+        and usuario_atual.papel == UsuarioOperacional.Papel.GARCOM
+    )
+    acoes_cancelamento = []
+    total_formatado = None
+    if pode_lancar_adicional:
+        atendimento = Atendimento.objects.filter(
+            comanda__identificador=resultado.identificador,
+            estado=Atendimento.Estado.ABERTO,
+        ).first()
+        if atendimento is not None:
+            lancamentos_validos = list(
+                atendimento.lancamentos.validos()
+                .select_related("produto", "autor")
+                .order_by("horario", "pk")
+            )
+            acoes_cancelamento = [
+                {"lancamento": lancamento, "chave": str(uuid4())}
+                for lancamento in lancamentos_validos
+            ]
+            total_formatado = _formatar_centavos_brl(
+                calcular_total_atendimento(
+                    (
+                        lancamento.quantidade,
+                        lancamento.preco_unitario_centavos,
+                    )
+                    for lancamento in lancamentos_validos
+                )
+            )
     return render(
         request,
         "interface_web/consulta_comanda.html",
         {
             "identificador": resultado.identificador,
             "mensagem": mensagens[resultado.estado],
-            "pode_lancar_adicional": (
-                resultado.estado == EstadoComanda.EM_ATENDIMENTO
-                and usuario_atual is not None
-                and usuario_atual.papel
-                == UsuarioOperacional.Papel.GARCOM
-            ),
+            "pode_lancar_adicional": pode_lancar_adicional,
             "produtos": Produto.objects.order_by("nome"),
             "chave_idempotencia": str(uuid4()),
+            "acoes_cancelamento": acoes_cancelamento,
+            "motivos_cancelamento": CancelamentoLancamento.Motivo.choices,
+            "total_formatado": total_formatado,
         },
     )
 
@@ -282,6 +329,96 @@ def registrar_lancamento_adicional(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "interface_web/lancamento_registrado.html",
+        {
+            "resultado": resultado,
+            "total_formatado": _formatar_centavos_brl(
+                resultado.total_centavos
+            ),
+        },
+    )
+
+
+@require_POST
+def cancelar_lancamento(request: HttpRequest) -> HttpResponse:
+    try:
+        resultado = executar_cancelamento_lancamento(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL),
+            request.POST.get("lancamento_id"),
+            request.POST.get("motivo"),
+            request.POST.get("descricao"),
+            request.POST.get("chave_idempotencia"),
+        )
+    except UsuarioOperacionalInvalido:
+        return _redirecionar_selecao_invalida(request)
+    except PapelNaoPermitido:
+        return HttpResponseForbidden("Usuário operacional sem permissão.")
+    except PersistenciaTemporariamenteIndisponivel:
+        usuario = _buscar_usuario(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL)
+        )
+        return render(
+            request,
+            "interface_web/experiencia_usuario.html",
+            _contexto_garcom(
+                usuario,
+                "Banco ocupado temporariamente. Tente novamente",
+            ),
+            status=503,
+        )
+    except (ConflitoIdempotencia, LancamentoJaCancelado) as erro:
+        mensagem = (
+            "Esta tentativa já foi usada com dados diferentes"
+            if isinstance(erro, ConflitoIdempotencia)
+            else "Lançamento já cancelado"
+        )
+        usuario = _buscar_usuario(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL)
+        )
+        return render(
+            request,
+            "interface_web/experiencia_usuario.html",
+            _contexto_garcom(usuario, mensagem),
+            status=409,
+        )
+    except LancamentoNaoEncontrado:
+        usuario = _buscar_usuario(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL)
+        )
+        return render(
+            request,
+            "interface_web/experiencia_usuario.html",
+            _contexto_garcom(usuario, "Lançamento não encontrado"),
+            status=404,
+        )
+    except (
+        AtendimentoEncerrado,
+        MotivoCancelamentoInvalido,
+        DescricaoCancelamentoInvalida,
+        ChaveIdempotenciaInvalida,
+    ) as erro:
+        mensagens = {
+            AtendimentoEncerrado: "Atendimento encerrado",
+            MotivoCancelamentoInvalido: "Selecione um motivo válido",
+            DescricaoCancelamentoInvalida: (
+                "Informe uma descrição quando o motivo for Outro"
+            ),
+            ChaveIdempotenciaInvalida: (
+                "Não foi possível identificar esta tentativa"
+            ),
+        }
+        usuario = _buscar_usuario(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL)
+        )
+        return render(
+            request,
+            "interface_web/experiencia_usuario.html",
+            _contexto_garcom(usuario, mensagens[type(erro)]),
+            status=400,
+        )
+
+    return render(
+        request,
+        "interface_web/lancamento_cancelado.html",
         {
             "resultado": resultado,
             "total_formatado": _formatar_centavos_brl(

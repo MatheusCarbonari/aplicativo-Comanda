@@ -7,8 +7,10 @@ from django.db import (
 )
 from django.test import TestCase
 
-from restaurante.aplicacao.registrar_primeiro_lancamento import (
+from restaurante.aplicacao.contencao_persistencia import (
     PersistenciaTemporariamenteIndisponivel,
+)
+from restaurante.aplicacao.registrar_primeiro_lancamento import (
     registrar_primeiro_lancamento,
 )
 from restaurante.aplicacao.registrar_lancamento_adicional import (

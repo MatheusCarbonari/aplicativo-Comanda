@@ -113,8 +113,9 @@ quantidade, preço registrado, autor e horário. Nenhum Atendimento é criado po
 essa operação.
 
 O Total atual é calculado em centavos pela soma de `quantidade × preço unitário
-registrado` de todos os Lançamentos persistidos no Atendimento. O cálculo não usa
-o preço atual do catálogo e o valor é formatado em reais somente na interface.
+registrado` dos Lançamentos válidos do Atendimento. Lançamentos cancelados
+permanecem persistidos, mas deixam de compor o Total. O cálculo não usa o preço
+atual do catálogo e o valor é formatado em reais somente na interface.
 
 Cada registro de Lançamento recebe uma chave de idempotência opaca gerada pela
 interface. O backend combina essa chave com uma identidade estável da operação e
@@ -127,6 +128,23 @@ representando ações intencionais distintas.
 O formulário desabilita seu botão após um envio válido para reduzir toques duplos,
 mas essa é apenas uma conveniência. A garantia efetiva está no registro persistente,
 cuja chave possui unicidade no banco e continua válida após reiniciar a aplicação.
+
+## Cancelar um lançamento
+
+Na consulta de uma Comanda em atendimento, o Garçom pode cancelar integralmente
+um Lançamento válido, inclusive quando outro Garçom o registrou. O registro
+original não é alterado nem apagado: um `CancelamentoLancamento` separado preserva
+motivo, descrição, autor e horário. O motivo é obrigatório e deve ser Duplicado,
+Produto incorreto, Quantidade incorreta, Desistência ou Outro; para Outro, uma
+descrição também é obrigatória.
+
+Cada Lançamento aceita no máximo um cancelamento por uma relação única protegida
+pelo SQLite. A operação usa a identidade idempotente `CANCELAR_LANCAMENTO`, de
+modo que repetir a mesma solicitação retorna o resultado confirmado e uma chave
+nova não cria um segundo cancelamento. Caixa, Atendimento encerrado, Lançamento
+inexistente e Lançamento já cancelado são rejeitados pelo backend. Não existe
+cancelamento parcial: para corrigir uma quantidade, cancela-se o Lançamento inteiro
+e registra-se outro.
 
 ## Persistência SQLite
 

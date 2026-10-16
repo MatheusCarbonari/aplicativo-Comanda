@@ -45,7 +45,14 @@ class Atendimento(models.Model):
         ]
 
 
+class LancamentoQuerySet(models.QuerySet):
+    def validos(self):
+        return self.filter(cancelamento__isnull=True)
+
+
 class Lancamento(models.Model):
+    objects = LancamentoQuerySet.as_manager()
+
     atendimento = models.ForeignKey(
         Atendimento,
         on_delete=models.PROTECT,
@@ -72,6 +79,32 @@ class Lancamento(models.Model):
                 name="lancamento_quantidade_positiva",
             )
         ]
+
+
+class CancelamentoLancamento(models.Model):
+    class Motivo(models.TextChoices):
+        DUPLICADO = "DUPLICADO", "Duplicado"
+        PRODUTO_INCORRETO = "PRODUTO_INCORRETO", "Produto incorreto"
+        QUANTIDADE_INCORRETA = (
+            "QUANTIDADE_INCORRETA",
+            "Quantidade incorreta",
+        )
+        DESISTENCIA = "DESISTENCIA", "Desistência"
+        OUTRO = "OUTRO", "Outro"
+
+    lancamento = models.OneToOneField(
+        Lancamento,
+        on_delete=models.PROTECT,
+        related_name="cancelamento",
+    )
+    motivo = models.CharField(max_length=24, choices=Motivo.choices)
+    descricao = models.TextField(blank=True)
+    autor = models.ForeignKey(
+        UsuarioOperacional,
+        on_delete=models.PROTECT,
+        related_name="cancelamentos_realizados",
+    )
+    horario = models.DateTimeField(auto_now_add=True)
 
 
 class RegistroIdempotencia(models.Model):

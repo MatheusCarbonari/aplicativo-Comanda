@@ -88,9 +88,8 @@ def registrar_lancamento_adicional(
             autor=usuario,
         )
         total_centavos = calcular_total_atendimento(
-            atendimento.lancamentos.values_list(
-                "quantidade",
-                "preco_unitario_centavos",
+            atendimento.lancamentos.validos().values_list(
+                "quantidade", "preco_unitario_centavos"
             )
         )
         return asdict(

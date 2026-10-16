@@ -3,6 +3,7 @@
 from django.urls import path
 
 from .views import (
+    cancelar_lancamento,
     consultar_comanda,
     experiencia_caixa,
     experiencia_garcom,
@@ -28,6 +29,11 @@ urlpatterns = [
         "lancamentos/adicional/",
         registrar_lancamento_adicional,
         name="registrar_lancamento_adicional",
+    ),
+    path(
+        "lancamentos/cancelar/",
+        cancelar_lancamento,
+        name="cancelar_lancamento",
     ),
     path("garcom/", experiencia_garcom, name="experiencia_garcom"),
     path("caixa/", experiencia_caixa, name="experiencia_caixa"),

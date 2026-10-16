@@ -21,6 +21,10 @@
         {% include "interface_web/formulario_consulta_comanda.html" %}
         {% if pode_lancar_adicional %}
           {% include "interface_web/formulario_lancamento_adicional.html" %}
+          <p>Total atual: <strong>{{ total_formatado }}</strong></p>
+          {% if acoes_cancelamento %}
+            {% include "interface_web/formulario_cancelamento_lancamento.html" %}
+          {% endif %}
         {% endif %}
         <form method="post" action="{% url 'trocar_usuario' %}">
           {% csrf_token %}

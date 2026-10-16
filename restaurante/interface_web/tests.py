@@ -5,6 +5,7 @@ from django.test import TestCase
 
 from restaurante.persistencia.models import (
     Atendimento,
+    CancelamentoLancamento,
     ComandaFisica,
     Lancamento,
     Produto,
@@ -450,6 +451,7 @@ class LancamentoAdicionalInterfaceTests(TestCase):
         self.assertEqual(resposta.status_code, 403)
         self.assertEqual(Lancamento.objects.count(), 0)
 
+
     def test_dois_lancamentos_sucessivos_continuam_independentes(self):
         self.selecionar(self.garcom)
 
@@ -538,3 +540,157 @@ class LancamentoAdicionalInterfaceTests(TestCase):
             status_code=400,
         )
         self.assertEqual(Lancamento.objects.count(), 0)
+
+
+class CancelamentoLancamentoInterfaceTests(TestCase):
+    def setUp(self):
+        self.garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        self.caixa = UsuarioOperacional.objects.create(
+            nome="Caixa 1",
+            papel=UsuarioOperacional.Papel.CAIXA,
+        )
+        self.comanda = ComandaFisica.objects.create(identificador="001")
+        self.atendimento = Atendimento.objects.create(comanda=self.comanda)
+        self.cafe = Produto.objects.create(nome="Café", preco_centavos=600)
+        self.pizza = Produto.objects.create(nome="Pizza", preco_centavos=4500)
+        self.lancamento_cafe = Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.cafe,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.pizza,
+            quantidade=1,
+            preco_unitario_centavos=4500,
+            autor=self.garcom,
+        )
+
+    def selecionar(self, usuario):
+        self.client.post("/usuarios/selecionar/", {"usuario_id": usuario.pk})
+
+    def test_garcom_cancela_lancamento_valido_e_total_e_atualizado(self):
+        self.selecionar(self.garcom)
+        consulta = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.assertContains(consulta, "Cancelar lançamento")
+        self.assertContains(consulta, "Produto incorreto")
+        self.assertContains(consulta, "Quantidade incorreta")
+        chave = consulta.context["acoes_cancelamento"][0]["chave"]
+
+        resposta = self.client.post(
+            "/lancamentos/cancelar/",
+            {
+                "lancamento_id": self.lancamento_cafe.pk,
+                "motivo": CancelamentoLancamento.Motivo.OUTRO,
+                "descricao": "Cliente mudou o pedido",
+                "chave_idempotencia": chave,
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Lançamento cancelado")
+        self.assertContains(resposta, "R$ 45,00")
+        self.assertTrue(
+            Lancamento.objects.filter(pk=self.lancamento_cafe.pk).exists()
+        )
+        self.assertEqual(CancelamentoLancamento.objects.count(), 1)
+
+    def test_caixa_nao_ve_nem_pode_cancelar(self):
+        self.selecionar(self.caixa)
+
+        consulta = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+        resposta = self.client.post(
+            "/lancamentos/cancelar/",
+            {
+                "lancamento_id": self.lancamento_cafe.pk,
+                "motivo": CancelamentoLancamento.Motivo.DUPLICADO,
+                "descricao": "",
+                "chave_idempotencia": "caixa-cancelamento",
+            },
+        )
+
+        self.assertNotContains(consulta, "Cancelar lançamento")
+        self.assertEqual(resposta.status_code, 403)
+        self.assertEqual(CancelamentoLancamento.objects.count(), 0)
+
+    def test_outro_sem_descricao_exibe_validacao_sem_cancelar(self):
+        self.selecionar(self.garcom)
+
+        resposta = self.client.post(
+            "/lancamentos/cancelar/",
+            {
+                "lancamento_id": self.lancamento_cafe.pk,
+                "motivo": CancelamentoLancamento.Motivo.OUTRO,
+                "descricao": " ",
+                "chave_idempotencia": "outro-interface",
+            },
+        )
+
+        self.assertEqual(resposta.status_code, 400)
+        self.assertContains(
+            resposta,
+            "Informe uma descrição quando o motivo for Outro",
+            status_code=400,
+        )
+        self.assertEqual(CancelamentoLancamento.objects.count(), 0)
+
+    def test_contencao_persistente_retorna_503_sem_cancelar(self):
+        self.selecionar(self.garcom)
+        tentativas = 0
+
+        def bloquear_insercao(execute, sql, params, many, context):
+            nonlocal tentativas
+            if 'insert into "persistencia_cancelamentolancamento"' in sql.lower():
+                tentativas += 1
+                raise OperationalError("database is locked")
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(bloquear_insercao):
+            resposta = self.client.post(
+                "/lancamentos/cancelar/",
+                {
+                    "lancamento_id": self.lancamento_cafe.pk,
+                    "motivo": CancelamentoLancamento.Motivo.DUPLICADO,
+                    "descricao": "",
+                    "chave_idempotencia": "contencao-interface",
+                },
+            )
+
+        self.assertEqual(resposta.status_code, 503)
+        self.assertContains(
+            resposta,
+            "Banco ocupado temporariamente. Tente novamente",
+            status_code=503,
+        )
+        self.assertEqual(tentativas, 2)
+        self.assertEqual(CancelamentoLancamento.objects.count(), 0)
+
+    def test_consulta_exibe_total_zero_apos_cancelar_todos(self):
+        self.selecionar(self.garcom)
+        Lancamento.objects.exclude(pk=self.lancamento_cafe.pk).delete()
+        CancelamentoLancamento.objects.create(
+            lancamento=self.lancamento_cafe,
+            motivo=CancelamentoLancamento.Motivo.DESISTENCIA,
+            descricao="",
+            autor=self.garcom,
+        )
+
+        resposta = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.assertContains(resposta, "R$ 0,00")
+        self.assertNotContains(resposta, "Cancelar lançamento")

@@ -1,0 +1,30 @@
+<section class="secao-operacional" aria-labelledby="titulo-cancelamentos">
+  <h2 id="titulo-cancelamentos">Cancelar lançamento</h2>
+  {% for acao in acoes_cancelamento %}
+    <article>
+      <p>
+        <strong>{{ acao.lancamento.produto.nome }}</strong>
+        — Quantidade: {{ acao.lancamento.quantidade }}
+      </p>
+      <form class="formulario-operacional" method="post" action="{% url 'cancelar_lancamento' %}" data-envio-unico>
+        {% csrf_token %}
+        <input type="hidden" name="lancamento_id" value="{{ acao.lancamento.pk }}">
+        <input type="hidden" name="chave_idempotencia" value="{{ acao.chave }}">
+
+        <label for="motivo-cancelamento-{{ acao.lancamento.pk }}">Motivo</label>
+        <select id="motivo-cancelamento-{{ acao.lancamento.pk }}" name="motivo" required>
+          <option value="">Selecione um motivo</option>
+          {% for valor, rotulo in motivos_cancelamento %}
+            <option value="{{ valor }}">{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="descricao-cancelamento-{{ acao.lancamento.pk }}">
+          Descrição (obrigatória para Outro)
+        </label>
+        <textarea id="descricao-cancelamento-{{ acao.lancamento.pk }}" name="descricao" rows="2"></textarea>
+        <button type="submit">Cancelar lançamento</button>
+      </form>
+    </article>
+  {% endfor %}
+</section>

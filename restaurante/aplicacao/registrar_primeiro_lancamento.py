@@ -1,7 +1,10 @@
 from dataclasses import asdict, dataclass
 
-from django.db import IntegrityError, OperationalError, transaction
+from django.db import IntegrityError, transaction
 
+from restaurante.aplicacao.contencao_persistencia import (
+    executar_com_retry_de_contencao,
+)
 from restaurante.aplicacao.idempotencia import executar_idempotente
 from restaurante.aplicacao.usuarios_operacionais import (
     buscar_garcom,
@@ -17,10 +20,7 @@ from restaurante.persistencia.models import (
     Lancamento,
     Produto,
 )
-from restaurante.persistencia.conflitos_sqlite import (
-    e_conflito_de_abertura,
-    e_contencao_transitoria,
-)
+from restaurante.persistencia.conflitos_sqlite import e_conflito_de_abertura
 
 
 class ComandaNaoEncontrada(Exception):
@@ -31,12 +31,7 @@ class ProdutoNaoEncontrado(Exception):
     pass
 
 
-class PersistenciaTemporariamenteIndisponivel(Exception):
-    pass
-
-
 OPERACAO_REGISTRAR_PRIMEIRO_LANCAMENTO = "REGISTRAR_PRIMEIRO_LANCAMENTO"
-MAXIMO_TENTATIVAS_CONTENCAO = 2
 
 
 @dataclass(frozen=True)
@@ -108,18 +103,12 @@ def registrar_primeiro_lancamento(
             )
         )
 
-    for tentativa in range(MAXIMO_TENTATIVAS_CONTENCAO):
-        try:
-            resultado = executar_idempotente(
-                chave=chave_idempotencia,
-                operacao=OPERACAO_REGISTRAR_PRIMEIRO_LANCAMENTO,
-                conteudo=conteudo,
-                executar=executar,
-            )
-            break
-        except OperationalError as erro:
-            if not e_contencao_transitoria(erro):
-                raise
-            if tentativa + 1 == MAXIMO_TENTATIVAS_CONTENCAO:
-                raise PersistenciaTemporariamenteIndisponivel from erro
+    resultado = executar_com_retry_de_contencao(
+        lambda: executar_idempotente(
+            chave=chave_idempotencia,
+            operacao=OPERACAO_REGISTRAR_PRIMEIRO_LANCAMENTO,
+            conteudo=conteudo,
+            executar=executar,
+        )
+    )
     return ResultadoPrimeiroLancamento(**resultado)
