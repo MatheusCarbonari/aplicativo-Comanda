@@ -45,9 +45,11 @@ from restaurante.dominio.lancamentos import (
     calcular_total_atendimento,
     consolidar_lancamentos,
 )
+from restaurante.interface_web.codigos_barras import gerar_code_128
 from restaurante.persistencia.models import (
     Atendimento,
     CancelamentoLancamento,
+    ComandaFisica,
     Produto,
     UsuarioOperacional,
 )
@@ -55,6 +57,25 @@ from restaurante.persistencia.models import (
 
 CHAVE_USUARIO_OPERACIONAL = "usuario_operacional_id"
 FUSO_HORARIO_APRESENTACAO = ZoneInfo("America/Sao_Paulo")
+IDENTIFICADORES_FOLHA_TESTE = tuple(
+    f"{numero:03d}" for numero in range(1, 21)
+)
+
+
+@require_GET
+def folha_codigos_barras(request: HttpRequest) -> HttpResponse:
+    comandas = ComandaFisica.objects.filter(
+        identificador__in=IDENTIFICADORES_FOLHA_TESTE
+    ).order_by("identificador")
+    return render(
+        request,
+        "interface_web/folha_codigos_barras.html",
+        {
+            "codigos_barras": [
+                gerar_code_128(comanda.identificador) for comanda in comandas
+            ]
+        },
+    )
 
 
 def _buscar_usuario(identificador: object) -> UsuarioOperacional | None:

@@ -94,6 +94,23 @@ do código. Para uma validação manual futura com o dispositivo físico:
 Não há integração direta com o hardware: digitação, leitura seguida de
 `Enter` e clique em `Consultar` submetem o mesmo formulário HTTP `GET`.
 
+### Imprimir a folha de códigos de teste
+
+Com os dados iniciais carregados, abra
+`http://127.0.0.1:8000/utilitarios/codigos-barras/`. A página usa somente HTML,
+SVG e CSS locais e apresenta as Comandas `001` a `020`; ela é exclusiva para
+desenvolvimento e demonstração, não sendo recibo, documento fiscal ou Comanda
+operacional.
+
+Para validar a impressão e a leitura física:
+
+1. abra a folha no navegador e acione a impressão em papel A4;
+2. mantenha a escala em 100%, sem ajustar o conteúdo à página;
+3. abra a tela do Caixa e posicione o foco no campo Identificador da comanda;
+4. leia alguns códigos impressos, incluindo `001` e `020`;
+5. confirme que cada leitura preserva os três caracteres e executa a consulta
+   correspondente.
+
 ## Registrar o primeiro lançamento
 
 Na experiência do Garçom, o formulário de primeiro lançamento recebe o

@@ -1,0 +1,108 @@
+:root {
+  color: #111;
+  background: #ececec;
+  font-family: Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.folha-codigos {
+  width: min(100% - 2rem, 70rem);
+  margin: 1rem auto;
+  padding: 1rem;
+  background: #fff;
+}
+
+.cabecalho-folha {
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.cabecalho-folha h1,
+.cabecalho-folha p {
+  margin: 0.3rem 0;
+}
+
+.rotulo-folha,
+.aviso-folha {
+  font-weight: 700;
+}
+
+.grade-codigos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.4rem;
+}
+
+.codigo-comanda {
+  min-width: 0;
+  padding: 0.35rem;
+  border: 1px solid #bbb;
+  break-inside: avoid;
+  text-align: center;
+}
+
+.barras-code-128 {
+  display: block;
+  width: 100%;
+  height: 3.2rem;
+  fill: #000;
+  shape-rendering: crispEdges;
+}
+
+.legenda-comanda {
+  margin: 0.15rem 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+@page {
+  size: A4 portrait;
+  margin: 8mm;
+}
+
+@media print {
+  :root {
+    background: #fff;
+  }
+
+  .folha-codigos {
+    width: auto;
+    margin: 0;
+    padding: 0;
+  }
+
+  .cabecalho-folha {
+    margin-bottom: 4mm;
+  }
+
+  .cabecalho-folha h1 {
+    font-size: 16pt;
+  }
+
+  .cabecalho-folha p {
+    font-size: 9pt;
+  }
+
+  .grade-codigos {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2mm;
+  }
+
+  .codigo-comanda {
+    min-height: 43mm;
+    padding: 3mm;
+    border-color: #777;
+  }
+
+  .barras-code-128 {
+    height: 25mm;
+  }
+}

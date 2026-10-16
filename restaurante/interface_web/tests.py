@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -12,6 +13,102 @@ from restaurante.persistencia.models import (
     Produto,
     UsuarioOperacional,
 )
+
+
+class FolhaCodigosBarrasTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        ComandaFisica.objects.bulk_create(
+            [
+                ComandaFisica(identificador=f"{numero:03d}")
+                for numero in range(1, 22)
+            ]
+        )
+
+    def test_mostra_exatamente_as_comandas_de_001_a_020(self):
+        resposta = self.client.get("/utilitarios/codigos-barras/")
+
+        identificadores = re.findall(
+            rb'data-identificador="([^"]+)"',
+            resposta.content,
+        )
+        self.assertEqual(resposta.status_code, 200)
+        self.assertEqual(
+            identificadores,
+            [f"{numero:03d}".encode() for numero in range(1, 21)],
+        )
+
+    def test_cada_comanda_tem_code_128_e_texto_legivel(self):
+        resposta = self.client.get("/utilitarios/codigos-barras/")
+
+        conteudos_codificados = re.findall(
+            rb'data-code128="([^"]+)"',
+            resposta.content,
+        )
+        self.assertEqual(
+            conteudos_codificados,
+            [f"{numero:03d}".encode() for numero in range(1, 21)],
+        )
+        self.assertContains(
+            resposta,
+            'data-simbologia="Code 128"',
+            count=20,
+            html=False,
+        )
+        for numero in range(1, 21):
+            self.assertContains(
+                resposta,
+                f'<span class="identificador-comanda">{numero:03d}</span>',
+                html=True,
+            )
+
+    def test_svgs_contem_barras_e_geometria_code_128_valida(self):
+        resposta = self.client.get("/utilitarios/codigos-barras/")
+
+        svgs = re.findall(
+            rb'<svg[^>]+data-code128="([^"]+)"[^>]*>(.*?)</svg>',
+            resposta.content,
+            flags=re.DOTALL,
+        )
+        self.assertEqual(len(svgs), 20)
+        for _, conteudo_svg in svgs:
+            self.assertEqual(conteudo_svg.count(b"<rect "), 19)
+
+        barras_001 = re.findall(
+            rb'<rect x="(\d+)" y="0" width="(\d+)" height="50">',
+            svgs[0][1],
+        )
+        self.assertEqual(
+            barras_001,
+            [
+                (b"10", b"2"), (b"13", b"1"), (b"16", b"1"),
+                (b"21", b"1"), (b"24", b"3"), (b"28", b"2"),
+                (b"32", b"1"), (b"35", b"3"), (b"39", b"2"),
+                (b"43", b"1"), (b"46", b"3"), (b"51", b"2"),
+                (b"54", b"1"), (b"56", b"4"), (b"61", b"3"),
+                (b"65", b"2"), (b"70", b"3"), (b"74", b"1"),
+                (b"76", b"2"),
+            ],
+        )
+
+    def test_avisa_uso_de_teste_e_usa_somente_recursos_locais(self):
+        resposta = self.client.get("/utilitarios/codigos-barras/")
+
+        self.assertContains(
+            resposta,
+            "Uso exclusivo para desenvolvimento e demonstração.",
+        )
+        self.assertContains(
+            resposta,
+            "Não é recibo, documento fiscal ou Comanda operacional.",
+        )
+        self.assertContains(
+            resposta,
+            "/static/interface_web/css/folha_codigos_barras.css",
+        )
+        self.assertNotContains(resposta, "https://")
+        self.assertNotContains(resposta, "http://")
+        self.assertNotContains(resposta, "//cdn")
 
 
 class FluxoUsuarioOperacionalTests(TestCase):

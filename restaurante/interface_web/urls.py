@@ -8,6 +8,7 @@ from .views import (
     consultar_comanda_caixa,
     experiencia_caixa,
     experiencia_garcom,
+    folha_codigos_barras,
     pagina_inicial,
     registrar_lancamento_adicional,
     registrar_primeiro_lancamento,
@@ -18,6 +19,11 @@ from .views import (
 
 urlpatterns = [
     path("", pagina_inicial, name="pagina_inicial"),
+    path(
+        "utilitarios/codigos-barras/",
+        folha_codigos_barras,
+        name="folha_codigos_barras",
+    ),
     path("usuarios/selecionar/", selecionar_usuario, name="selecionar_usuario"),
     path("usuarios/trocar/", trocar_usuario, name="trocar_usuario"),
     path("comandas/consultar/", consultar_comanda, name="consultar_comanda"),

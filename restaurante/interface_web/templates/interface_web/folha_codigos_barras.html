@@ -1,0 +1,44 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Folha de teste de códigos de barras</title>
+    <link rel="stylesheet" href="{% static 'interface_web/css/folha_codigos_barras.css' %}">
+  </head>
+  <body>
+    <main class="folha-codigos">
+      <header class="cabecalho-folha">
+        <p class="rotulo-folha">Folha de teste</p>
+        <h1>Códigos de barras das Comandas</h1>
+        <p>Uso exclusivo para desenvolvimento e demonstração.</p>
+        <p class="aviso-folha">
+          Não é recibo, documento fiscal ou Comanda operacional.
+        </p>
+      </header>
+      <div class="grade-codigos">
+        {% for codigo in codigos_barras %}
+          <article class="codigo-comanda" data-identificador="{{ codigo.identificador }}">
+            <svg
+              class="barras-code-128"
+              data-code128="{{ codigo.identificador }}"
+              data-simbologia="Code 128"
+              viewBox="0 0 {{ codigo.largura }} 50"
+              role="img"
+              aria-label="Código Code 128 da Comanda {{ codigo.identificador }}"
+              preserveAspectRatio="none"
+            >
+              {% for barra in codigo.barras %}
+                <rect x="{{ barra.x }}" y="0" width="{{ barra.largura }}" height="50"></rect>
+              {% endfor %}
+            </svg>
+            <p class="legenda-comanda">
+              Comanda <span class="identificador-comanda">{{ codigo.identificador }}</span>
+            </p>
+          </article>
+        {% endfor %}
+      </div>
+    </main>
+  </body>
+</html>
