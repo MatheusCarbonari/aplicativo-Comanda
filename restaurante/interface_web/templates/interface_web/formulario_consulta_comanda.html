@@ -2,9 +2,11 @@
   <label for="identificador-comanda">Identificador da comanda</label>
   <input
     id="identificador-comanda"
+    type="text"
     name="identificador"
     value="{{ identificador|default:'' }}"
     autocomplete="off"
+    {% if foco_automatico_consulta %}autofocus{% endif %}
     required
   >
   <button type="submit">Consultar</button>

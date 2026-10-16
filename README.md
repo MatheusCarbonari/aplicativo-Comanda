@@ -80,6 +80,20 @@ O modelo Atendimento representa somente os estados `ABERTO` e `ENCERRADO` nesta
 etapa. Uma restrição condicional no SQLite permite vários atendimentos encerrados,
 mas impede mais de um Atendimento aberto para a mesma Comanda física.
 
+### Validar um leitor de código de barras
+
+O leitor deve estar configurado para operar como teclado e enviar `Enter` depois
+do código. Para uma validação manual futura com o dispositivo físico:
+
+1. abra a tela do Caixa;
+2. confirme que o foco está no campo Identificador da comanda;
+3. escaneie o código;
+4. confirme que o leitor escreveu o identificador e enviou `Enter`;
+5. verifique que foi executada a mesma consulta usada na digitação manual.
+
+Não há integração direta com o hardware: digitação, leitura seguida de
+`Enter` e clique em `Consultar` submetem o mesmo formulário HTTP `GET`.
+
 ## Registrar o primeiro lançamento
 
 Na experiência do Garçom, o formulário de primeiro lançamento recebe o

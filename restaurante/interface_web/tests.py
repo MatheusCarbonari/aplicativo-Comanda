@@ -925,6 +925,73 @@ class ConsultaComandaCaixaInterfaceTests(TestCase):
             html=False,
         )
 
+    def test_campo_de_consulta_e_textual_preserva_zeros_e_recebe_foco(self):
+        self.selecionar(self.caixa)
+
+        pagina_inicial = self.client.get("/caixa/")
+        resultado = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.assertContains(pagina_inicial, 'type="text"', html=False)
+        self.assertContains(pagina_inicial, "autofocus", html=False)
+        self.assertContains(resultado, "Comanda 001")
+        self.assertContains(resultado, 'value="001"', html=False)
+
+    def test_enter_e_clique_submetem_o_mesmo_formulario_get(self):
+        self.selecionar(self.caixa)
+
+        pagina_inicial = self.client.get("/caixa/")
+        resposta_enter = self.client.get(
+            "/caixa/comandas/consultar/?identificador=001"
+        )
+        resposta_clique = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.assertContains(
+            pagina_inicial,
+            '<form class="formulario-consulta" method="get" '
+            'action="/caixa/comandas/consultar/">',
+            html=False,
+        )
+        self.assertContains(
+            pagina_inicial,
+            '<button type="submit">Consultar</button>',
+            html=True,
+        )
+        self.assertEqual(resposta_enter.status_code, 200)
+        self.assertEqual(resposta_clique.status_code, 200)
+        self.assertEqual(
+            resposta_enter.context["mensagem"],
+            resposta_clique.context["mensagem"],
+        )
+        self.assertEqual(
+            resposta_enter.context["identificador"],
+            resposta_clique.context["identificador"],
+        )
+
+    def test_mensagens_de_comanda_desconhecida_e_disponivel_sao_mantidas(self):
+        ComandaFisica.objects.create(identificador="002")
+        self.selecionar(self.caixa)
+
+        disponivel = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "002"},
+        )
+        desconhecida = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "999"},
+        )
+
+        self.assertContains(
+            disponivel,
+            "Comanda disponível — nenhum atendimento aberto",
+        )
+        self.assertContains(desconhecida, "Comanda não encontrada")
+
     def test_consolida_produto_e_preco_sem_juntar_precos_diferentes(self):
         cafe = Produto.objects.create(nome="Café", preco_centavos=700)
         for quantidade, preco in ((1, 600), (2, 600), (1, 700)):

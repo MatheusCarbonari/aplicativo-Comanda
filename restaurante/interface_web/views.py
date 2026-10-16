@@ -315,6 +315,7 @@ def consultar_comanda_caixa(request: HttpRequest) -> HttpResponse:
             "total_formatado": _formatar_centavos_brl(total_centavos),
             "historico_cancelamentos": historico_cancelamentos,
             "url_consulta": "consultar_comanda_caixa",
+            "foco_automatico_consulta": True,
         },
     )
 
@@ -582,5 +583,6 @@ def experiencia_caixa(request: HttpRequest) -> HttpResponse:
             "titulo": "Experiência do Caixa",
             "descricao": "Consulte uma Comanda para conferir o atendimento atual.",
             "url_consulta": "consultar_comanda_caixa",
+            "foco_automatico_consulta": True,
         },
     )
