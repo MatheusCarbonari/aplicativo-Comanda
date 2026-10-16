@@ -4,6 +4,7 @@ from enum import StrEnum
 from restaurante.aplicacao.usuarios_operacionais import (
     PapelNaoPermitido,
     UsuarioOperacionalInvalido,
+    buscar_caixa,
 )
 from restaurante.persistencia.models import (
     Atendimento,
@@ -41,6 +42,19 @@ def consultar_estado_comanda(
         UsuarioOperacional.Papel.CAIXA,
     }:
         raise PapelNaoPermitido
+
+    return _consultar_estado(identificador)
+
+
+def consultar_estado_comanda_caixa(
+    usuario_operacional_id: object,
+    identificador: str,
+) -> ResultadoConsultaComanda:
+    buscar_caixa(usuario_operacional_id)
+    return _consultar_estado(identificador)
+
+
+def _consultar_estado(identificador: str) -> ResultadoConsultaComanda:
 
     comanda = ComandaFisica.objects.filter(identificador=identificador).first()
     if comanda is None:

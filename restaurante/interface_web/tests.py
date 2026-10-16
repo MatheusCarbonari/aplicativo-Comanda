@@ -876,3 +876,124 @@ class HistoricoCancelamentosInterfaceTests(TestCase):
 
         self.assertContains(resposta, "Consumos válidos")
         self.assertNotContains(resposta, "Lançamentos cancelados")
+
+
+class ConsultaComandaCaixaInterfaceTests(TestCase):
+    def setUp(self):
+        self.caixa = UsuarioOperacional.objects.create(
+            nome="Caixa 1",
+            papel=UsuarioOperacional.Papel.CAIXA,
+        )
+        self.garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        self.comanda = ComandaFisica.objects.create(identificador="001")
+        self.atendimento = Atendimento.objects.create(comanda=self.comanda)
+
+    def selecionar(self, usuario):
+        self.client.post(
+            "/usuarios/selecionar/",
+            {"usuario_id": usuario.pk},
+        )
+
+    def test_backend_permite_caixa_e_rejeita_garcom(self):
+        self.selecionar(self.caixa)
+        resposta_caixa = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.selecionar(self.garcom)
+        resposta_garcom = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.assertEqual(resposta_caixa.status_code, 200)
+        self.assertContains(resposta_caixa, "Resumo do atendimento")
+        self.assertEqual(resposta_garcom.status_code, 403)
+
+    def test_experiencia_do_caixa_envia_consulta_para_rota_protegida(self):
+        self.selecionar(self.caixa)
+
+        resposta = self.client.get("/caixa/")
+
+        self.assertContains(
+            resposta,
+            'action="/caixa/comandas/consultar/"',
+            html=False,
+        )
+
+    def test_consolida_produto_e_preco_sem_juntar_precos_diferentes(self):
+        cafe = Produto.objects.create(nome="Café", preco_centavos=700)
+        for quantidade, preco in ((1, 600), (2, 600), (1, 700)):
+            Lancamento.objects.create(
+                atendimento=self.atendimento,
+                produto=cafe,
+                quantidade=quantidade,
+                preco_unitario_centavos=preco,
+                autor=self.garcom,
+            )
+        self.selecionar(self.caixa)
+
+        resposta = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.assertContains(
+            resposta,
+            "Café | qtd 3 | R$ 6,00 | subtotal R$ 18,00",
+        )
+        self.assertContains(
+            resposta,
+            "Café | qtd 1 | R$ 7,00 | subtotal R$ 7,00",
+        )
+        self.assertContains(resposta, "Total atual: R$ 25,00")
+
+    def test_cancelados_ficam_fora_do_resumo_e_historico_permanece(self):
+        cafe = Produto.objects.create(nome="Café", preco_centavos=600)
+        valido = Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=cafe,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        cancelado = Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=cafe,
+            quantidade=4,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        CancelamentoLancamento.objects.create(
+            lancamento=cancelado,
+            motivo=CancelamentoLancamento.Motivo.QUANTIDADE_INCORRETA,
+            descricao="Quantidade digitada incorretamente",
+            autor=self.garcom,
+        )
+        quantidade_antes = Lancamento.objects.count()
+        self.selecionar(self.caixa)
+
+        resposta = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.assertContains(
+            resposta,
+            "Café | qtd 2 | R$ 6,00 | subtotal R$ 12,00",
+        )
+        self.assertNotContains(resposta, "Café | qtd 6")
+        self.assertContains(resposta, "Total atual: R$ 12,00")
+        self.assertContains(resposta, "Lançamentos cancelados")
+        self.assertContains(resposta, "Motivo: Quantidade incorreta")
+        self.assertContains(
+            resposta,
+            "Descrição: Quantidade digitada incorretamente",
+        )
+        self.assertEqual(Lancamento.objects.count(), quantidade_antes)
+        self.assertTrue(Lancamento.objects.filter(pk=valido.pk).exists())
+        self.assertTrue(Lancamento.objects.filter(pk=cancelado.pk).exists())

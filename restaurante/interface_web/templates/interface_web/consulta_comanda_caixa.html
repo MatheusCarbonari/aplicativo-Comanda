@@ -1,0 +1,37 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Consulta do Caixa | Comandas do restaurante</title>
+    <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
+  </head>
+  <body>
+    <main class="pagina-inicial">
+      <section class="cartao" aria-labelledby="titulo-principal">
+        <p class="rotulo">Consulta do Caixa</p>
+        <h1 id="titulo-principal">Resumo do atendimento</h1>
+        {% if identificador %}<p>Comanda {{ identificador }}</p>{% endif %}
+        <p class="estado-comanda" role="status">{{ mensagem }}</p>
+        {% include "interface_web/formulario_consulta_comanda.html" %}
+        {% if em_atendimento %}
+          <section id="resumo-atendimento" class="secao-operacional" aria-labelledby="titulo-resumo-atendimento">
+            <h2 id="titulo-resumo-atendimento">Consumos válidos</h2>
+            {% for item in itens_consolidados %}
+              <p>{{ item.produto }} | qtd {{ item.quantidade }} | {{ item.preco_unitario }} | subtotal {{ item.subtotal }}</p>
+            {% endfor %}
+            <p><strong>Total atual: {{ total_formatado }}</strong></p>
+          </section>
+          {% if historico_cancelamentos %}
+            {% include "interface_web/historico_cancelamentos.html" %}
+          {% endif %}
+        {% endif %}
+        <form method="post" action="{% url 'trocar_usuario' %}">
+          {% csrf_token %}
+          <button type="submit">Trocar usuário</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

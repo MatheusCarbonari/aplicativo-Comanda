@@ -5,6 +5,7 @@ from django.urls import path
 from .views import (
     cancelar_lancamento,
     consultar_comanda,
+    consultar_comanda_caixa,
     experiencia_caixa,
     experiencia_garcom,
     pagina_inicial,
@@ -20,6 +21,11 @@ urlpatterns = [
     path("usuarios/selecionar/", selecionar_usuario, name="selecionar_usuario"),
     path("usuarios/trocar/", trocar_usuario, name="trocar_usuario"),
     path("comandas/consultar/", consultar_comanda, name="consultar_comanda"),
+    path(
+        "caixa/comandas/consultar/",
+        consultar_comanda_caixa,
+        name="consultar_comanda_caixa",
+    ),
     path(
         "lancamentos/primeiro/",
         registrar_primeiro_lancamento,

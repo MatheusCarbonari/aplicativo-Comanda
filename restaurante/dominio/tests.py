@@ -1,8 +1,10 @@
 from unittest import TestCase
 
 from restaurante.dominio.lancamentos import (
+    LancamentoParaConsolidacao,
     QuantidadeInvalida,
     calcular_total_atendimento,
+    consolidar_lancamentos,
     validar_quantidade,
 )
 
@@ -30,3 +32,43 @@ class CalcularTotalAtendimentoTests(TestCase):
 
     def test_atendimento_sem_lancamentos_tem_total_zero(self):
         self.assertEqual(calcular_total_atendimento([]), 0)
+
+
+class ConsolidarLancamentosTests(TestCase):
+    def test_soma_quantidades_do_mesmo_produto_e_preco(self):
+        lancamentos = [
+            LancamentoParaConsolidacao(1, "Café", 1, 600),
+            LancamentoParaConsolidacao(1, "Café", 2, 600),
+        ]
+
+        consolidados = consolidar_lancamentos(lancamentos)
+
+        self.assertEqual(len(consolidados), 1)
+        self.assertEqual(consolidados[0].produto, "Café")
+        self.assertEqual(consolidados[0].quantidade, 3)
+        self.assertEqual(consolidados[0].preco_unitario_centavos, 600)
+        self.assertEqual(consolidados[0].subtotal_centavos, 1800)
+
+    def test_mantem_precos_diferentes_em_linhas_separadas(self):
+        lancamentos = [
+            LancamentoParaConsolidacao(1, "Café", 2, 600),
+            LancamentoParaConsolidacao(1, "Café", 1, 700),
+        ]
+
+        consolidados = consolidar_lancamentos(lancamentos)
+
+        self.assertEqual(
+            [
+                (
+                    item.produto,
+                    item.quantidade,
+                    item.preco_unitario_centavos,
+                    item.subtotal_centavos,
+                )
+                for item in consolidados
+            ],
+            [
+                ("Café", 2, 600, 1200),
+                ("Café", 1, 700, 700),
+            ],
+        )

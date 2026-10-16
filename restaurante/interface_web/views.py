@@ -24,6 +24,7 @@ from restaurante.aplicacao.consultar_estado_comanda import (
     PapelNaoPermitido,
     UsuarioOperacionalInvalido,
     consultar_estado_comanda,
+    consultar_estado_comanda_caixa as executar_consulta_comanda_caixa,
 )
 from restaurante.aplicacao.idempotencia import (
     ChaveIdempotenciaInvalida,
@@ -39,8 +40,10 @@ from restaurante.aplicacao.registrar_lancamento_adicional import (
     registrar_lancamento_adicional as executar_lancamento_adicional,
 )
 from restaurante.dominio.lancamentos import (
+    LancamentoParaConsolidacao,
     QuantidadeInvalida,
     calcular_total_atendimento,
+    consolidar_lancamentos,
 )
 from restaurante.persistencia.models import (
     Atendimento,
@@ -79,6 +82,7 @@ def _contexto_garcom(
         "produtos": Produto.objects.order_by("nome"),
         "erro_lancamento": erro_lancamento,
         "chave_idempotencia": str(uuid4()),
+        "url_consulta": "consultar_comanda",
     }
 
 
@@ -92,6 +96,36 @@ def _formatar_horario_local(valor) -> str:
     return valor.astimezone(FUSO_HORARIO_APRESENTACAO).strftime(
         "%d/%m/%Y %H:%M"
     )
+
+
+def _preparar_historico_cancelamentos(
+    atendimento: Atendimento,
+) -> list[dict[str, object]]:
+    lancamentos_cancelados = (
+        atendimento.lancamentos.filter(cancelamento__isnull=False)
+        .select_related("produto", "autor", "cancelamento__autor")
+        .order_by("horario", "pk")
+    )
+    return [
+        {
+            "produto": lancamento.produto.nome,
+            "quantidade": lancamento.quantidade,
+            "preco_unitario": _formatar_centavos_brl(
+                lancamento.preco_unitario_centavos
+            ),
+            "autor_lancamento": lancamento.autor.nome,
+            "horario_lancamento": _formatar_horario_local(
+                lancamento.horario
+            ),
+            "autor_cancelamento": lancamento.cancelamento.autor.nome,
+            "horario_cancelamento": _formatar_horario_local(
+                lancamento.cancelamento.horario
+            ),
+            "motivo": lancamento.cancelamento.get_motivo_display(),
+            "descricao": lancamento.cancelamento.descricao,
+        }
+        for lancamento in lancamentos_cancelados
+    ]
 
 
 def pagina_inicial(request: HttpRequest) -> HttpResponse:
@@ -178,31 +212,9 @@ def consultar_comanda(request: HttpRequest) -> HttpResponse:
                 {"lancamento": lancamento, "chave": str(uuid4())}
                 for lancamento in lancamentos_validos
             ]
-            lancamentos_cancelados = (
-                atendimento.lancamentos.filter(cancelamento__isnull=False)
-                .select_related("produto", "autor", "cancelamento__autor")
-                .order_by("horario", "pk")
+            historico_cancelamentos = _preparar_historico_cancelamentos(
+                atendimento
             )
-            historico_cancelamentos = [
-                {
-                    "produto": lancamento.produto.nome,
-                    "quantidade": lancamento.quantidade,
-                    "preco_unitario": _formatar_centavos_brl(
-                        lancamento.preco_unitario_centavos
-                    ),
-                    "autor_lancamento": lancamento.autor.nome,
-                    "horario_lancamento": _formatar_horario_local(
-                        lancamento.horario
-                    ),
-                    "autor_cancelamento": lancamento.cancelamento.autor.nome,
-                    "horario_cancelamento": _formatar_horario_local(
-                        lancamento.cancelamento.horario
-                    ),
-                    "motivo": lancamento.cancelamento.get_motivo_display(),
-                    "descricao": lancamento.cancelamento.descricao,
-                }
-                for lancamento in lancamentos_cancelados
-            ]
             total_formatado = _formatar_centavos_brl(
                 calcular_total_atendimento(
                     (
@@ -225,6 +237,84 @@ def consultar_comanda(request: HttpRequest) -> HttpResponse:
             "historico_cancelamentos": historico_cancelamentos,
             "motivos_cancelamento": CancelamentoLancamento.Motivo.choices,
             "total_formatado": total_formatado,
+            "url_consulta": "consultar_comanda",
+        },
+    )
+
+
+@require_GET
+def consultar_comanda_caixa(request: HttpRequest) -> HttpResponse:
+    try:
+        resultado = executar_consulta_comanda_caixa(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL),
+            request.GET.get("identificador", ""),
+        )
+    except UsuarioOperacionalInvalido:
+        return _redirecionar_selecao_invalida(request)
+    except PapelNaoPermitido:
+        return HttpResponseForbidden("Usuário operacional sem permissão.")
+
+    mensagens = {
+        EstadoComanda.DISPONIVEL: (
+            "Comanda disponível — nenhum atendimento aberto"
+        ),
+        EstadoComanda.EM_ATENDIMENTO: "Em atendimento",
+        EstadoComanda.NAO_ENCONTRADA: "Comanda não encontrada",
+    }
+    itens_consolidados = []
+    historico_cancelamentos = []
+    total_centavos = 0
+    if resultado.estado == EstadoComanda.EM_ATENDIMENTO:
+        atendimento = Atendimento.objects.get(
+            comanda__identificador=resultado.identificador,
+            estado=Atendimento.Estado.ABERTO,
+        )
+        lancamentos_validos = list(
+            atendimento.lancamentos.validos()
+            .select_related("produto")
+            .order_by("horario", "pk")
+        )
+        consolidados = consolidar_lancamentos(
+            LancamentoParaConsolidacao(
+                produto_id=lancamento.produto_id,
+                produto=lancamento.produto.nome,
+                quantidade=lancamento.quantidade,
+                preco_unitario_centavos=lancamento.preco_unitario_centavos,
+            )
+            for lancamento in lancamentos_validos
+        )
+        itens_consolidados = [
+            {
+                "produto": item.produto,
+                "quantidade": item.quantidade,
+                "preco_unitario": _formatar_centavos_brl(
+                    item.preco_unitario_centavos
+                ),
+                "subtotal": _formatar_centavos_brl(item.subtotal_centavos),
+            }
+            for item in consolidados
+        ]
+        total_centavos = calcular_total_atendimento(
+            (
+                lancamento.quantidade,
+                lancamento.preco_unitario_centavos,
+            )
+            for lancamento in lancamentos_validos
+        )
+        historico_cancelamentos = _preparar_historico_cancelamentos(
+            atendimento
+        )
+    return render(
+        request,
+        "interface_web/consulta_comanda_caixa.html",
+        {
+            "identificador": resultado.identificador,
+            "mensagem": mensagens[resultado.estado],
+            "em_atendimento": resultado.estado == EstadoComanda.EM_ATENDIMENTO,
+            "itens_consolidados": itens_consolidados,
+            "total_formatado": _formatar_centavos_brl(total_centavos),
+            "historico_cancelamentos": historico_cancelamentos,
+            "url_consulta": "consultar_comanda_caixa",
         },
     )
 
@@ -490,6 +580,7 @@ def experiencia_caixa(request: HttpRequest) -> HttpResponse:
         {
             "usuario": usuario,
             "titulo": "Experiência do Caixa",
-            "descricao": "A consulta de comandas será adicionada nos próximos tickets.",
+            "descricao": "Consulte uma Comanda para conferir o atendimento atual.",
+            "url_consulta": "consultar_comanda_caixa",
         },
     )
