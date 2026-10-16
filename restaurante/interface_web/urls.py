@@ -4,6 +4,7 @@ from django.urls import path
 
 from .views import (
     cancelar_lancamento,
+    confirmar_fechamento_atendimento,
     consultar_comanda,
     consultar_comanda_caixa,
     experiencia_caixa,
@@ -31,6 +32,11 @@ urlpatterns = [
         "caixa/comandas/consultar/",
         consultar_comanda_caixa,
         name="consultar_comanda_caixa",
+    ),
+    path(
+        "caixa/atendimentos/<int:atendimento_id>/fechar/",
+        confirmar_fechamento_atendimento,
+        name="fechar_atendimento",
     ),
     path(
         "lancamentos/primeiro/",

@@ -1,12 +1,17 @@
 """Páginas renderizadas pela interface web."""
 
+from urllib.parse import urlencode
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import (
+    require_GET,
+    require_http_methods,
+    require_POST,
+)
 
 from restaurante.aplicacao.cancelar_lancamento import (
     AtendimentoEncerrado,
@@ -30,6 +35,11 @@ from restaurante.aplicacao.idempotencia import (
     ChaveIdempotenciaInvalida,
     ConflitoIdempotencia,
 )
+from restaurante.aplicacao.fechar_atendimento import (
+    AtendimentoJaEncerrado as AtendimentoJaFechado,
+    AtendimentoNaoEncontrado as AtendimentoParaFechamentoNaoEncontrado,
+    fechar_atendimento as executar_fechamento_atendimento,
+)
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
     ComandaNaoEncontrada,
     ProdutoNaoEncontrado,
@@ -39,6 +49,7 @@ from restaurante.aplicacao.registrar_lancamento_adicional import (
     AtendimentoAbertoNaoEncontrado,
     registrar_lancamento_adicional as executar_lancamento_adicional,
 )
+from restaurante.aplicacao.usuarios_operacionais import buscar_caixa
 from restaurante.dominio.lancamentos import (
     LancamentoParaConsolidacao,
     QuantidadeInvalida,
@@ -147,6 +158,50 @@ def _preparar_historico_cancelamentos(
         }
         for lancamento in lancamentos_cancelados
     ]
+
+
+def _preparar_resumo_caixa(
+    atendimento: Atendimento,
+) -> dict[str, object]:
+    lancamentos_validos = list(
+        atendimento.lancamentos.validos()
+        .select_related("produto")
+        .order_by("horario", "pk")
+    )
+    consolidados = consolidar_lancamentos(
+        LancamentoParaConsolidacao(
+            produto_id=lancamento.produto_id,
+            produto=lancamento.produto.nome,
+            quantidade=lancamento.quantidade,
+            preco_unitario_centavos=lancamento.preco_unitario_centavos,
+        )
+        for lancamento in lancamentos_validos
+    )
+    itens_consolidados = [
+        {
+            "produto": item.produto,
+            "quantidade": item.quantidade,
+            "preco_unitario": _formatar_centavos_brl(
+                item.preco_unitario_centavos
+            ),
+            "subtotal": _formatar_centavos_brl(item.subtotal_centavos),
+        }
+        for item in consolidados
+    ]
+    total_centavos = calcular_total_atendimento(
+        (
+            lancamento.quantidade,
+            lancamento.preco_unitario_centavos,
+        )
+        for lancamento in lancamentos_validos
+    )
+    return {
+        "itens_consolidados": itens_consolidados,
+        "total_formatado": _formatar_centavos_brl(total_centavos),
+        "historico_cancelamentos": _preparar_historico_cancelamentos(
+            atendimento
+        ),
+    }
 
 
 def pagina_inicial(request: HttpRequest) -> HttpResponse:
@@ -284,47 +339,17 @@ def consultar_comanda_caixa(request: HttpRequest) -> HttpResponse:
     }
     itens_consolidados = []
     historico_cancelamentos = []
-    total_centavos = 0
+    total_formatado = _formatar_centavos_brl(0)
+    atendimento = None
     if resultado.estado == EstadoComanda.EM_ATENDIMENTO:
         atendimento = Atendimento.objects.get(
             comanda__identificador=resultado.identificador,
             estado=Atendimento.Estado.ABERTO,
         )
-        lancamentos_validos = list(
-            atendimento.lancamentos.validos()
-            .select_related("produto")
-            .order_by("horario", "pk")
-        )
-        consolidados = consolidar_lancamentos(
-            LancamentoParaConsolidacao(
-                produto_id=lancamento.produto_id,
-                produto=lancamento.produto.nome,
-                quantidade=lancamento.quantidade,
-                preco_unitario_centavos=lancamento.preco_unitario_centavos,
-            )
-            for lancamento in lancamentos_validos
-        )
-        itens_consolidados = [
-            {
-                "produto": item.produto,
-                "quantidade": item.quantidade,
-                "preco_unitario": _formatar_centavos_brl(
-                    item.preco_unitario_centavos
-                ),
-                "subtotal": _formatar_centavos_brl(item.subtotal_centavos),
-            }
-            for item in consolidados
-        ]
-        total_centavos = calcular_total_atendimento(
-            (
-                lancamento.quantidade,
-                lancamento.preco_unitario_centavos,
-            )
-            for lancamento in lancamentos_validos
-        )
-        historico_cancelamentos = _preparar_historico_cancelamentos(
-            atendimento
-        )
+        resumo = _preparar_resumo_caixa(atendimento)
+        itens_consolidados = resumo["itens_consolidados"]
+        total_formatado = resumo["total_formatado"]
+        historico_cancelamentos = resumo["historico_cancelamentos"]
     return render(
         request,
         "interface_web/consulta_comanda_caixa.html",
@@ -333,10 +358,74 @@ def consultar_comanda_caixa(request: HttpRequest) -> HttpResponse:
             "mensagem": mensagens[resultado.estado],
             "em_atendimento": resultado.estado == EstadoComanda.EM_ATENDIMENTO,
             "itens_consolidados": itens_consolidados,
-            "total_formatado": _formatar_centavos_brl(total_centavos),
+            "total_formatado": total_formatado,
             "historico_cancelamentos": historico_cancelamentos,
+            "atendimento": atendimento,
             "url_consulta": "consultar_comanda_caixa",
             "foco_automatico_consulta": True,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+def confirmar_fechamento_atendimento(
+    request: HttpRequest,
+    atendimento_id: int,
+) -> HttpResponse:
+    try:
+        buscar_caixa(request.session.get(CHAVE_USUARIO_OPERACIONAL))
+    except UsuarioOperacionalInvalido:
+        return _redirecionar_selecao_invalida(request)
+    except PapelNaoPermitido:
+        return HttpResponseForbidden("Usuário operacional sem permissão.")
+
+    if request.method == "POST":
+        try:
+            resultado = executar_fechamento_atendimento(
+                request.session.get(CHAVE_USUARIO_OPERACIONAL),
+                atendimento_id,
+                request.POST.get("chave_idempotencia"),
+            )
+        except AtendimentoParaFechamentoNaoEncontrado:
+            return HttpResponse("Atendimento não encontrado.", status=404)
+        except (AtendimentoJaFechado, ConflitoIdempotencia) as erro:
+            mensagem = (
+                "Esta tentativa já foi usada com dados diferentes"
+                if isinstance(erro, ConflitoIdempotencia)
+                else "Atendimento já encerrado"
+            )
+            return HttpResponse(mensagem, status=409)
+        except ChaveIdempotenciaInvalida:
+            return HttpResponse(
+                "Não foi possível identificar esta tentativa.",
+                status=400,
+            )
+        except PersistenciaTemporariamenteIndisponivel:
+            return HttpResponse(
+                "Banco ocupado temporariamente. Tente novamente.",
+                status=503,
+            )
+        consulta = reverse("consultar_comanda_caixa")
+        parametros = urlencode(
+            {"identificador": resultado.comanda_identificador}
+        )
+        return redirect(f"{consulta}?{parametros}")
+
+    atendimento = (
+        Atendimento.objects.select_related("comanda")
+        .filter(pk=atendimento_id, estado=Atendimento.Estado.ABERTO)
+        .first()
+    )
+    if atendimento is None:
+        return HttpResponse("Atendimento aberto não encontrado.", status=404)
+
+    return render(
+        request,
+        "interface_web/confirmar_fechamento_atendimento.html",
+        {
+            "atendimento": atendimento,
+            "chave_idempotencia": str(uuid4()),
+            **_preparar_resumo_caixa(atendimento),
         },
     )
 

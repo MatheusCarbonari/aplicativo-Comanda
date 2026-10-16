@@ -26,6 +26,9 @@
           {% if historico_cancelamentos %}
             {% include "interface_web/historico_cancelamentos.html" %}
           {% endif %}
+          <a class="acao-secundaria" href="{% url 'fechar_atendimento' atendimento.pk %}">
+            Fechar atendimento
+          </a>
         {% endif %}
         <form method="post" action="{% url 'trocar_usuario' %}">
           {% csrf_token %}

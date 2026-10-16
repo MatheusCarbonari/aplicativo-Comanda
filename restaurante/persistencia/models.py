@@ -34,6 +34,14 @@ class Atendimento(models.Model):
         choices=Estado.choices,
         default=Estado.ABERTO,
     )
+    fechado_por = models.ForeignKey(
+        UsuarioOperacional,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="atendimentos_fechados",
+    )
+    fechado_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [

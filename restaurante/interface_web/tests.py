@@ -11,6 +11,7 @@ from restaurante.persistencia.models import (
     ComandaFisica,
     Lancamento,
     Produto,
+    RegistroIdempotencia,
     UsuarioOperacional,
 )
 
@@ -1161,3 +1162,122 @@ class ConsultaComandaCaixaInterfaceTests(TestCase):
         self.assertEqual(Lancamento.objects.count(), quantidade_antes)
         self.assertTrue(Lancamento.objects.filter(pk=valido.pk).exists())
         self.assertTrue(Lancamento.objects.filter(pk=cancelado.pk).exists())
+
+    def test_caixa_confere_resumo_antes_de_confirmar_fechamento(self):
+        cafe = Produto.objects.create(nome="Café", preco_centavos=600)
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=cafe,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        self.selecionar(self.caixa)
+
+        consulta = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "001"},
+        )
+        conferencia = self.client.get(
+            f"/caixa/atendimentos/{self.atendimento.pk}/fechar/"
+        )
+
+        self.assertContains(
+            consulta,
+            f'href="/caixa/atendimentos/{self.atendimento.pk}/fechar/"',
+            html=False,
+        )
+        self.assertEqual(conferencia.status_code, 200)
+        self.assertContains(conferencia, "Confirmar fechamento")
+        self.assertContains(conferencia, "Comanda 001")
+        self.assertContains(
+            conferencia,
+            "Café | qtd 2 | R$ 6,00 | subtotal R$ 12,00",
+        )
+        self.assertContains(conferencia, "Total atual: R$ 12,00")
+        self.assertContains(
+            conferencia,
+            "O fechamento é irreversível.",
+        )
+        self.assertContains(
+            conferencia,
+            '<button type="submit">Fechar atendimento</button>',
+            html=True,
+        )
+        self.assertContains(
+            conferencia,
+            'name="chave_idempotencia"',
+            html=False,
+        )
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.estado, Atendimento.Estado.ABERTO)
+
+    def test_caixa_confirma_fechamento_com_total_zero_por_post(self):
+        self.selecionar(self.caixa)
+        url = f"/caixa/atendimentos/{self.atendimento.pk}/fechar/"
+        conferencia = self.client.get(url)
+
+        resposta = self.client.post(
+            url,
+            {
+                "chave_idempotencia": conferencia.context[
+                    "chave_idempotencia"
+                ]
+            },
+        )
+
+        self.assertContains(conferencia, "Total atual: R$ 0,00")
+        self.assertRedirects(
+            resposta,
+            "/caixa/comandas/consultar/?identificador=001",
+            fetch_redirect_response=False,
+        )
+        self.atendimento.refresh_from_db()
+        self.assertEqual(
+            self.atendimento.estado,
+            Atendimento.Estado.ENCERRADO,
+        )
+        self.assertEqual(self.atendimento.fechado_por, self.caixa)
+        self.assertIsNotNone(self.atendimento.fechado_em)
+
+        consulta = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "001"},
+        )
+        self.assertContains(
+            consulta,
+            "Comanda disponível — nenhum atendimento aberto",
+        )
+
+    def test_garcom_nao_acessa_nem_confirma_fechamento(self):
+        self.selecionar(self.garcom)
+        url = f"/caixa/atendimentos/{self.atendimento.pk}/fechar/"
+
+        conferencia = self.client.get(url)
+        confirmacao = self.client.post(
+            url,
+            {"chave_idempotencia": str(UUID(int=1))},
+        )
+
+        self.assertEqual(conferencia.status_code, 403)
+        self.assertEqual(confirmacao.status_code, 403)
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.estado, Atendimento.Estado.ABERTO)
+
+    def test_replay_do_post_reutiliza_fechamento_confirmado(self):
+        self.selecionar(self.caixa)
+        url = f"/caixa/atendimentos/{self.atendimento.pk}/fechar/"
+        conferencia = self.client.get(url)
+        dados = {
+            "chave_idempotencia": conferencia.context[
+                "chave_idempotencia"
+            ]
+        }
+
+        primeira = self.client.post(url, dados)
+        repetida = self.client.post(url, dados)
+
+        self.assertEqual(primeira.status_code, 302)
+        self.assertEqual(repetida.status_code, 302)
+        self.assertEqual(primeira.url, repetida.url)
+        self.assertEqual(RegistroIdempotencia.objects.count(), 1)

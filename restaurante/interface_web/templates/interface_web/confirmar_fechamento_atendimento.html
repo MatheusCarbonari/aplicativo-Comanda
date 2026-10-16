@@ -1,0 +1,40 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Confirmar fechamento | Comandas do restaurante</title>
+    <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
+  </head>
+  <body>
+    <main class="pagina-inicial">
+      <section class="cartao" aria-labelledby="titulo-principal">
+        <p class="rotulo">Fechamento do Atendimento</p>
+        <h1 id="titulo-principal">Confirmar fechamento</h1>
+        <p>Comanda {{ atendimento.comanda.identificador }}</p>
+        <section class="secao-operacional" aria-labelledby="titulo-resumo-fechamento">
+          <h2 id="titulo-resumo-fechamento">Resumo atual</h2>
+          {% for item in itens_consolidados %}
+            <p>{{ item.produto }} | qtd {{ item.quantidade }} | {{ item.preco_unitario }} | subtotal {{ item.subtotal }}</p>
+          {% empty %}
+            <p>Nenhum consumo válido.</p>
+          {% endfor %}
+          <p><strong>Total atual: {{ total_formatado }}</strong></p>
+        </section>
+        {% if historico_cancelamentos %}
+          {% include "interface_web/historico_cancelamentos.html" %}
+        {% endif %}
+        <p class="aviso" role="alert">O fechamento é irreversível.</p>
+        <form method="post" action="{% url 'fechar_atendimento' atendimento.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
+          <button type="submit">Fechar atendimento</button>
+        </form>
+        <a class="acao-secundaria" href="{% url 'consultar_comanda_caixa' %}?identificador={{ atendimento.comanda.identificador|urlencode }}">
+          Voltar ao resumo
+        </a>
+      </section>
+    </main>
+  </body>
+</html>
