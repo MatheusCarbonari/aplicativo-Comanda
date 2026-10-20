@@ -29,6 +29,7 @@ class Atendimento(models.Model):
         on_delete=models.PROTECT,
         related_name="atendimentos",
     )
+    aberto_em = models.DateTimeField(auto_now_add=True)
     estado = models.CharField(
         max_length=10,
         choices=Estado.choices,

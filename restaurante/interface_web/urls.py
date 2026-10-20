@@ -13,6 +13,7 @@ from .views import (
     pagina_inicial,
     registrar_lancamento_adicional,
     registrar_primeiro_lancamento,
+    resumo_final_atendimento,
     selecionar_usuario,
     trocar_usuario,
 )
@@ -37,6 +38,11 @@ urlpatterns = [
         "caixa/atendimentos/<int:atendimento_id>/fechar/",
         confirmar_fechamento_atendimento,
         name="fechar_atendimento",
+    ),
+    path(
+        "caixa/atendimentos/<int:atendimento_id>/resumo-final/",
+        resumo_final_atendimento,
+        name="resumo_final_atendimento",
     ),
     path(
         "lancamentos/primeiro/",

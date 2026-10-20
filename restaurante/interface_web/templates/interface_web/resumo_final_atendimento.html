@@ -1,0 +1,35 @@
+{% load static %}
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Resumo final | Comandas do restaurante</title>
+    <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
+  </head>
+  <body>
+    <main class="pagina-inicial">
+      <section class="cartao" aria-labelledby="titulo-principal">
+        <p class="rotulo">Atendimento encerrado</p>
+        <h1 id="titulo-principal">Resumo final</h1>
+        <p>Comanda {{ atendimento.comanda.identificador }}</p>
+        <p>Atendimento {{ atendimento.pk }}</p>
+        <p>Aberto em: {{ aberto_em_formatado }}</p>
+        <p>Fechado em: {{ fechado_em_formatado }}</p>
+        <p>Caixa responsável: {{ atendimento.fechado_por.nome }}</p>
+        <section class="secao-operacional" aria-labelledby="titulo-itens-validos">
+          <h2 id="titulo-itens-validos">Consumos válidos</h2>
+          {% for item in itens_consolidados %}
+            <p>{{ item.produto }} | qtd {{ item.quantidade }} | {{ item.preco_unitario }} | subtotal {{ item.subtotal }}</p>
+          {% empty %}
+            <p>Nenhum consumo válido.</p>
+          {% endfor %}
+          <p><strong>Total final: {{ total_formatado }}</strong></p>
+        </section>
+        {% if historico_cancelamentos %}
+          {% include "interface_web/historico_cancelamentos.html" %}
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>

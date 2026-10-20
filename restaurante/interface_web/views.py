@@ -1,6 +1,5 @@
 """Páginas renderizadas pela interface web."""
 
-from urllib.parse import urlencode
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -455,11 +454,7 @@ def confirmar_fechamento_atendimento(
                 "Banco ocupado temporariamente. Tente novamente.",
                 status=503,
             )
-        consulta = reverse("consultar_comanda_caixa")
-        parametros = urlencode(
-            {"identificador": resultado.comanda_identificador}
-        )
-        return redirect(f"{consulta}?{parametros}")
+        return redirect("resumo_final_atendimento", resultado.atendimento_id)
 
     atendimento = (
         Atendimento.objects.select_related("comanda")
@@ -470,6 +465,43 @@ def confirmar_fechamento_atendimento(
         return HttpResponse("Atendimento aberto não encontrado.", status=404)
 
     return _renderizar_confirmacao_fechamento(request, atendimento)
+
+
+@require_GET
+def resumo_final_atendimento(
+    request: HttpRequest,
+    atendimento_id: int,
+) -> HttpResponse:
+    try:
+        buscar_caixa(request.session.get(CHAVE_USUARIO_OPERACIONAL))
+    except UsuarioOperacionalInvalido:
+        return _redirecionar_selecao_invalida(request)
+    except PapelNaoPermitido:
+        return HttpResponseForbidden("Usuário operacional sem permissão.")
+
+    atendimento = (
+        Atendimento.objects.select_related("comanda", "fechado_por")
+        .filter(pk=atendimento_id, estado=Atendimento.Estado.ENCERRADO)
+        .first()
+    )
+    if atendimento is None:
+        return HttpResponse("Atendimento encerrado não encontrado.", status=404)
+
+    resumo = _preparar_resumo_caixa(atendimento)
+    return render(
+        request,
+        "interface_web/resumo_final_atendimento.html",
+        {
+            "atendimento": atendimento,
+            "aberto_em_formatado": _formatar_horario_local(
+                atendimento.aberto_em
+            ),
+            "fechado_em_formatado": _formatar_horario_local(
+                atendimento.fechado_em
+            ),
+            **resumo,
+        },
+    )
 
 
 @require_POST

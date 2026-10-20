@@ -1272,7 +1272,7 @@ class ConsultaComandaCaixaInterfaceTests(TestCase):
         self.assertContains(conferencia, "Total atual: R$ 0,00")
         self.assertRedirects(
             resposta,
-            "/caixa/comandas/consultar/?identificador=001",
+            f"/caixa/atendimentos/{self.atendimento.pk}/resumo-final/",
             fetch_redirect_response=False,
         )
         self.atendimento.refresh_from_db()
@@ -1418,3 +1418,158 @@ class ConsultaComandaCaixaInterfaceTests(TestCase):
         self.assertContains(conflito, "Lançamentos cancelados", status_code=409)
         self.atendimento.refresh_from_db()
         self.assertEqual(self.atendimento.estado, Atendimento.Estado.ABERTO)
+
+
+class ResumoFinalAtendimentoInterfaceTests(TestCase):
+    def setUp(self):
+        self.caixa = UsuarioOperacional.objects.create(
+            nome="Caixa 1",
+            papel=UsuarioOperacional.Papel.CAIXA,
+        )
+        self.garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        self.comanda = ComandaFisica.objects.create(identificador="001")
+        self.atendimento = Atendimento.objects.create(comanda=self.comanda)
+        self.cafe = Produto.objects.create(nome="Café", preco_centavos=700)
+        self.lancamentos = [
+            Lancamento.objects.create(
+                atendimento=self.atendimento,
+                produto=self.cafe,
+                quantidade=quantidade,
+                preco_unitario_centavos=preco,
+                autor=self.garcom,
+            )
+            for quantidade, preco in ((1, 600), (2, 600), (1, 700))
+        ]
+        self.abertura = datetime(2026, 1, 2, 15, 4, tzinfo=UTC)
+        self.fechamento = datetime(2026, 1, 2, 18, 45, tzinfo=UTC)
+
+    def encerrar_atendimento(self):
+        Atendimento.objects.filter(pk=self.atendimento.pk).update(
+            aberto_em=self.abertura,
+            estado=Atendimento.Estado.ENCERRADO,
+            fechado_por=self.caixa,
+            fechado_em=self.fechamento,
+        )
+
+    def selecionar(self, usuario):
+        self.client.post(
+            "/usuarios/selecionar/",
+            {"usuario_id": usuario.pk},
+        )
+
+    def test_mostra_identificacao_horarios_caixa_itens_e_total_final(self):
+        self.encerrar_atendimento()
+        self.selecionar(self.caixa)
+
+        resposta = self.client.get(
+            f"/caixa/atendimentos/{self.atendimento.pk}/resumo-final/"
+        )
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Comanda 001")
+        self.assertContains(resposta, f"Atendimento {self.atendimento.pk}")
+        self.assertContains(resposta, "Aberto em: 02/01/2026 12:04")
+        self.assertContains(resposta, "Fechado em: 02/01/2026 15:45")
+        self.assertContains(resposta, "Caixa responsável: Caixa 1")
+        self.assertContains(
+            resposta,
+            "Café | qtd 3 | R$ 6,00 | subtotal R$ 18,00",
+        )
+        self.assertContains(
+            resposta,
+            "Café | qtd 1 | R$ 7,00 | subtotal R$ 7,00",
+        )
+        self.assertContains(resposta, "Total final: R$ 25,00")
+
+    def test_mostra_cancelamento_separado_com_rastreabilidade(self):
+        autor_cancelamento = UsuarioOperacional.objects.create(
+            nome="Garçom 2",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        lancamento = self.lancamentos[1]
+        horario_lancamento = datetime(2026, 1, 2, 16, 10, tzinfo=UTC)
+        Lancamento.objects.filter(pk=lancamento.pk).update(
+            horario=horario_lancamento
+        )
+        cancelamento = CancelamentoLancamento.objects.create(
+            lancamento=lancamento,
+            motivo=CancelamentoLancamento.Motivo.OUTRO,
+            descricao="Cliente mudou o pedido",
+            autor=autor_cancelamento,
+        )
+        CancelamentoLancamento.objects.filter(pk=cancelamento.pk).update(
+            horario=datetime(2026, 1, 2, 17, 20, tzinfo=UTC)
+        )
+        self.encerrar_atendimento()
+        self.selecionar(self.caixa)
+
+        resposta = self.client.get(
+            f"/caixa/atendimentos/{self.atendimento.pk}/resumo-final/"
+        )
+
+        self.assertContains(resposta, "Lançamentos cancelados")
+        self.assertContains(resposta, "Quantidade: 2")
+        self.assertContains(resposta, "Preço unitário original: R$ 6,00")
+        self.assertContains(resposta, "Autor do lançamento: Garçom 1")
+        self.assertContains(resposta, "Lançado em: 02/01/2026 13:10")
+        self.assertContains(resposta, "Motivo: Outro")
+        self.assertContains(resposta, "Descrição: Cliente mudou o pedido")
+        self.assertContains(resposta, "Autor do cancelamento: Garçom 2")
+        self.assertContains(resposta, "Cancelado em: 02/01/2026 14:20")
+        self.assertContains(resposta, "Total final: R$ 13,00")
+
+    def test_todos_cancelados_mantem_total_zero_e_tela_somente_leitura(self):
+        for lancamento in self.lancamentos:
+            CancelamentoLancamento.objects.create(
+                lancamento=lancamento,
+                motivo=CancelamentoLancamento.Motivo.DESISTENCIA,
+                descricao="",
+                autor=self.garcom,
+            )
+        self.encerrar_atendimento()
+        self.selecionar(self.caixa)
+
+        resposta = self.client.get(
+            f"/caixa/atendimentos/{self.atendimento.pk}/resumo-final/"
+        )
+
+        self.assertContains(resposta, "Nenhum consumo válido.")
+        self.assertContains(resposta, "Total final: R$ 0,00")
+        for acao_ausente in (
+            "Pagamento",
+            "Forma de pagamento",
+            "Imprimir recibo",
+            "Emissão fiscal",
+            "Reabrir",
+            "Cancelar lançamento",
+        ):
+            with self.subTest(acao=acao_ausente):
+                self.assertNotContains(resposta, acao_ausente)
+
+    def test_resumo_permanece_no_atendimento_encerrado_apos_reuso_da_comanda(
+        self,
+    ):
+        self.encerrar_atendimento()
+        novo_atendimento = Atendimento.objects.create(comanda=self.comanda)
+        self.selecionar(self.caixa)
+
+        resposta = self.client.get(
+            f"/caixa/atendimentos/{self.atendimento.pk}/resumo-final/"
+        )
+
+        self.assertContains(resposta, f"Atendimento {self.atendimento.pk}")
+        self.assertNotContains(resposta, f"Atendimento {novo_atendimento.pk}")
+        self.assertEqual(resposta.context["atendimento"].pk, self.atendimento.pk)
+
+    def test_somente_caixa_acessa_resumo_final(self):
+        self.encerrar_atendimento()
+        self.selecionar(self.garcom)
+
+        resposta = self.client.get(
+            f"/caixa/atendimentos/{self.atendimento.pk}/resumo-final/"
+        )
+
+        self.assertEqual(resposta.status_code, 403)
