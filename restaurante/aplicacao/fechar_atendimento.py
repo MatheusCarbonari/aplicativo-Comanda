@@ -6,6 +6,9 @@ from restaurante.aplicacao.contencao_persistencia import (
     executar_com_retry_de_contencao,
 )
 from restaurante.aplicacao.idempotencia import executar_idempotente
+from restaurante.aplicacao.revisao_fechamento import (
+    calcular_revisao_fechamento,
+)
 from restaurante.aplicacao.usuarios_operacionais import (
     buscar_caixa,
     normalizar_identificador_usuario,
@@ -24,6 +27,10 @@ class AtendimentoJaEncerrado(Exception):
     pass
 
 
+class RevisaoFechamentoDesatualizada(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class ResultadoFechamentoAtendimento:
     atendimento_id: int
@@ -36,13 +43,16 @@ class ResultadoFechamentoAtendimento:
 def fechar_atendimento(
     usuario_operacional_id: object,
     atendimento_id: object,
+    revisao_apresentada: object,
     chave_idempotencia: object,
 ) -> ResultadoFechamentoAtendimento:
     chave_usuario = normalizar_identificador_usuario(usuario_operacional_id)
     chave_atendimento = _normalizar_atendimento(atendimento_id)
+    revisao = _normalizar_revisao(revisao_apresentada)
     conteudo = {
         "usuario_operacional_id": chave_usuario,
         "atendimento_id": chave_atendimento,
+        "revisao": revisao,
     }
 
     def executar() -> dict[str, object]:
@@ -56,6 +66,8 @@ def fechar_atendimento(
             raise AtendimentoNaoEncontrado
         if atendimento.estado != Atendimento.Estado.ABERTO:
             raise AtendimentoJaEncerrado
+        if calcular_revisao_fechamento(atendimento) != revisao:
+            raise RevisaoFechamentoDesatualizada
 
         fechado_em = timezone.now()
         atualizados = Atendimento.objects.filter(
@@ -95,3 +107,13 @@ def _normalizar_atendimento(atendimento_id: object) -> int:
         return int(atendimento_id)
     except (TypeError, ValueError) as erro:
         raise AtendimentoNaoEncontrado from erro
+
+
+def _normalizar_revisao(revisao: object) -> str:
+    if (
+        not isinstance(revisao, str)
+        or len(revisao) != 64
+        or any(caractere not in "0123456789abcdef" for caractere in revisao)
+    ):
+        raise RevisaoFechamentoDesatualizada
+    return revisao

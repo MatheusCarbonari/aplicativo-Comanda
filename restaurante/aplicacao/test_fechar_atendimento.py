@@ -15,6 +15,7 @@ from restaurante.aplicacao.consultar_estado_comanda import (
 )
 from restaurante.aplicacao.fechar_atendimento import (
     AtendimentoJaEncerrado,
+    RevisaoFechamentoDesatualizada,
     fechar_atendimento,
 )
 from restaurante.aplicacao.registrar_lancamento_adicional import (
@@ -23,6 +24,9 @@ from restaurante.aplicacao.registrar_lancamento_adicional import (
 )
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
     registrar_primeiro_lancamento,
+)
+from restaurante.aplicacao.revisao_fechamento import (
+    calcular_revisao_fechamento,
 )
 from restaurante.aplicacao.usuarios_operacionais import PapelNaoPermitido
 from restaurante.persistencia.models import (
@@ -34,6 +38,59 @@ from restaurante.persistencia.models import (
     RegistroIdempotencia,
     UsuarioOperacional,
 )
+
+
+class RevisaoFechamentoTests(TestCase):
+    def setUp(self):
+        self.garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        self.comanda = ComandaFisica.objects.create(identificador="001")
+        self.atendimento = Atendimento.objects.create(comanda=self.comanda)
+        self.produto = Produto.objects.create(nome="Café", preco_centavos=600)
+
+    def test_revisao_e_deterministica_e_muda_com_novo_lancamento(self):
+        revisao_inicial = calcular_revisao_fechamento(self.atendimento)
+
+        self.assertEqual(
+            calcular_revisao_fechamento(self.atendimento),
+            revisao_inicial,
+        )
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.produto,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+
+        self.assertNotEqual(
+            calcular_revisao_fechamento(self.atendimento),
+            revisao_inicial,
+        )
+
+    def test_revisao_muda_com_cancelamento(self):
+        lancamento = Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.produto,
+            quantidade=1,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        revisao_antes = calcular_revisao_fechamento(self.atendimento)
+
+        CancelamentoLancamento.objects.create(
+            lancamento=lancamento,
+            motivo=CancelamentoLancamento.Motivo.DESISTENCIA,
+            descricao="",
+            autor=self.garcom,
+        )
+
+        self.assertNotEqual(
+            calcular_revisao_fechamento(self.atendimento),
+            revisao_antes,
+        )
 
 
 class FecharAtendimentoTests(TestCase):
@@ -49,6 +106,7 @@ class FecharAtendimentoTests(TestCase):
         resultado = fechar_atendimento(
             self.caixa.pk,
             self.atendimento.pk,
+            calcular_revisao_fechamento(self.atendimento),
             str(uuid4()),
         )
 
@@ -82,6 +140,7 @@ class FecharAtendimentoTests(TestCase):
             fechar_atendimento(
                 garcom.pk,
                 self.atendimento.pk,
+                calcular_revisao_fechamento(self.atendimento),
                 str(uuid4()),
             )
 
@@ -93,15 +152,18 @@ class FecharAtendimentoTests(TestCase):
 
     def test_replay_com_mesma_chave_retorna_fechamento_original(self):
         chave = str(uuid4())
+        revisao = calcular_revisao_fechamento(self.atendimento)
 
         primeiro = fechar_atendimento(
             self.caixa.pk,
             self.atendimento.pk,
+            revisao,
             chave,
         )
         repetido = fechar_atendimento(
             self.caixa.pk,
             self.atendimento.pk,
+            revisao,
             chave,
         )
 
@@ -112,6 +174,7 @@ class FecharAtendimentoTests(TestCase):
         fechar_atendimento(
             self.caixa.pk,
             self.atendimento.pk,
+            calcular_revisao_fechamento(self.atendimento),
             str(uuid4()),
         )
 
@@ -119,6 +182,7 @@ class FecharAtendimentoTests(TestCase):
             fechar_atendimento(
                 self.caixa.pk,
                 self.atendimento.pk,
+                calcular_revisao_fechamento(self.atendimento),
                 str(uuid4()),
             )
 
@@ -154,6 +218,7 @@ class FecharAtendimentoTests(TestCase):
         fechar_atendimento(
             self.caixa.pk,
             self.atendimento.pk,
+            calcular_revisao_fechamento(self.atendimento),
             str(uuid4()),
         )
 
@@ -191,6 +256,7 @@ class FecharAtendimentoTests(TestCase):
         fechar_atendimento(
             self.caixa.pk,
             self.atendimento.pk,
+            calcular_revisao_fechamento(self.atendimento),
             str(uuid4()),
         )
 
@@ -206,6 +272,7 @@ class FecharAtendimentoTests(TestCase):
         fechar_atendimento(
             self.caixa.pk,
             self.atendimento.pk,
+            calcular_revisao_fechamento(self.atendimento),
             str(uuid4()),
         )
 
@@ -244,6 +311,7 @@ class FecharAtendimentoTests(TestCase):
                 fechar_atendimento(
                     self.caixa.pk,
                     self.atendimento.pk,
+                    calcular_revisao_fechamento(self.atendimento),
                     str(uuid4()),
                 )
 
@@ -252,3 +320,40 @@ class FecharAtendimentoTests(TestCase):
         self.assertIsNone(self.atendimento.fechado_por)
         self.assertIsNone(self.atendimento.fechado_em)
         self.assertEqual(RegistroIdempotencia.objects.count(), 0)
+
+    def test_revisao_antiga_nao_fecha_e_nova_revisao_fecha(self):
+        revisao_antiga = calcular_revisao_fechamento(self.atendimento)
+        garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        produto = Produto.objects.create(nome="Café", preco_centavos=600)
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=produto,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=garcom,
+        )
+
+        with self.assertRaises(RevisaoFechamentoDesatualizada):
+            fechar_atendimento(
+                self.caixa.pk,
+                self.atendimento.pk,
+                revisao_antiga,
+                str(uuid4()),
+            )
+
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.estado, Atendimento.Estado.ABERTO)
+        self.assertEqual(RegistroIdempotencia.objects.count(), 0)
+
+        fechar_atendimento(
+            self.caixa.pk,
+            self.atendimento.pk,
+            calcular_revisao_fechamento(self.atendimento),
+            str(uuid4()),
+        )
+
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.estado, Atendimento.Estado.ENCERRADO)

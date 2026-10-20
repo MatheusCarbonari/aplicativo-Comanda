@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -38,12 +39,16 @@ from restaurante.aplicacao.idempotencia import (
 from restaurante.aplicacao.fechar_atendimento import (
     AtendimentoJaEncerrado as AtendimentoJaFechado,
     AtendimentoNaoEncontrado as AtendimentoParaFechamentoNaoEncontrado,
+    RevisaoFechamentoDesatualizada,
     fechar_atendimento as executar_fechamento_atendimento,
 )
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
     ComandaNaoEncontrada,
     ProdutoNaoEncontrado,
     registrar_primeiro_lancamento as executar_primeiro_lancamento,
+)
+from restaurante.aplicacao.revisao_fechamento import (
+    calcular_revisao_fechamento,
 )
 from restaurante.aplicacao.registrar_lancamento_adicional import (
     AtendimentoAbertoNaoEncontrado,
@@ -202,6 +207,30 @@ def _preparar_resumo_caixa(
             atendimento
         ),
     }
+
+
+def _renderizar_confirmacao_fechamento(
+    request: HttpRequest,
+    atendimento: Atendimento,
+    *,
+    erro_revisao: str | None = None,
+    status: int = 200,
+) -> HttpResponse:
+    with transaction.atomic():
+        resumo = _preparar_resumo_caixa(atendimento)
+        revisao = calcular_revisao_fechamento(atendimento)
+    return render(
+        request,
+        "interface_web/confirmar_fechamento_atendimento.html",
+        {
+            "atendimento": atendimento,
+            "chave_idempotencia": str(uuid4()),
+            "revisao": revisao,
+            "erro_revisao": erro_revisao,
+            **resumo,
+        },
+        status=status,
+    )
 
 
 def pagina_inicial(request: HttpRequest) -> HttpResponse:
@@ -384,10 +413,31 @@ def confirmar_fechamento_atendimento(
             resultado = executar_fechamento_atendimento(
                 request.session.get(CHAVE_USUARIO_OPERACIONAL),
                 atendimento_id,
+                request.POST.get("revisao"),
                 request.POST.get("chave_idempotencia"),
             )
         except AtendimentoParaFechamentoNaoEncontrado:
             return HttpResponse("Atendimento não encontrado.", status=404)
+        except RevisaoFechamentoDesatualizada:
+            atendimento = (
+                Atendimento.objects.select_related("comanda")
+                .filter(
+                    pk=atendimento_id,
+                    estado=Atendimento.Estado.ABERTO,
+                )
+                .first()
+            )
+            if atendimento is None:
+                return HttpResponse("Atendimento já encerrado", status=409)
+            return _renderizar_confirmacao_fechamento(
+                request,
+                atendimento,
+                erro_revisao=(
+                    "O Atendimento mudou desde a conferência. Revise o "
+                    "resumo atualizado e confirme novamente."
+                ),
+                status=409,
+            )
         except (AtendimentoJaFechado, ConflitoIdempotencia) as erro:
             mensagem = (
                 "Esta tentativa já foi usada com dados diferentes"
@@ -419,15 +469,7 @@ def confirmar_fechamento_atendimento(
     if atendimento is None:
         return HttpResponse("Atendimento aberto não encontrado.", status=404)
 
-    return render(
-        request,
-        "interface_web/confirmar_fechamento_atendimento.html",
-        {
-            "atendimento": atendimento,
-            "chave_idempotencia": str(uuid4()),
-            **_preparar_resumo_caixa(atendimento),
-        },
-    )
+    return _renderizar_confirmacao_fechamento(request, atendimento)
 
 
 @require_POST

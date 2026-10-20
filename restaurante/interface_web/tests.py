@@ -1209,6 +1209,12 @@ class ConsultaComandaCaixaInterfaceTests(TestCase):
             'name="chave_idempotencia"',
             html=False,
         )
+        self.assertContains(
+            conferencia,
+            f'name="revisao" value="{conferencia.context["revisao"]}"',
+            html=False,
+        )
+        self.assertEqual(len(conferencia.context["revisao"]), 64)
         self.atendimento.refresh_from_db()
         self.assertEqual(self.atendimento.estado, Atendimento.Estado.ABERTO)
 
@@ -1222,7 +1228,8 @@ class ConsultaComandaCaixaInterfaceTests(TestCase):
             {
                 "chave_idempotencia": conferencia.context[
                     "chave_idempotencia"
-                ]
+                ],
+                "revisao": conferencia.context["revisao"],
             },
         )
 
@@ -1271,7 +1278,8 @@ class ConsultaComandaCaixaInterfaceTests(TestCase):
         dados = {
             "chave_idempotencia": conferencia.context[
                 "chave_idempotencia"
-            ]
+            ],
+            "revisao": conferencia.context["revisao"],
         }
 
         primeira = self.client.post(url, dados)
@@ -1281,3 +1289,96 @@ class ConsultaComandaCaixaInterfaceTests(TestCase):
         self.assertEqual(repetida.status_code, 302)
         self.assertEqual(primeira.url, repetida.url)
         self.assertEqual(RegistroIdempotencia.objects.count(), 1)
+
+    def test_revisao_antiga_recarrega_resumo_e_exige_nova_confirmacao(self):
+        cafe = Produto.objects.create(nome="Café", preco_centavos=600)
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=cafe,
+            quantidade=1,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        self.selecionar(self.caixa)
+        url = f"/caixa/atendimentos/{self.atendimento.pk}/fechar/"
+        conferencia_antiga = self.client.get(url)
+        revisao_antiga = conferencia_antiga.context["revisao"]
+
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=cafe,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        conflito = self.client.post(
+            url,
+            {
+                "chave_idempotencia": conferencia_antiga.context[
+                    "chave_idempotencia"
+                ],
+                "revisao": revisao_antiga,
+            },
+        )
+
+        self.assertEqual(conflito.status_code, 409)
+        self.assertContains(
+            conflito,
+            "O Atendimento mudou desde a conferência.",
+            status_code=409,
+        )
+        self.assertContains(conflito, "Total atual: R$ 18,00", status_code=409)
+        self.assertNotEqual(conflito.context["revisao"], revisao_antiga)
+        self.assertEqual(RegistroIdempotencia.objects.count(), 0)
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.estado, Atendimento.Estado.ABERTO)
+
+        confirmacao = self.client.post(
+            url,
+            {
+                "chave_idempotencia": conflito.context[
+                    "chave_idempotencia"
+                ],
+                "revisao": conflito.context["revisao"],
+            },
+        )
+
+        self.assertEqual(confirmacao.status_code, 302)
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.estado, Atendimento.Estado.ENCERRADO)
+        self.assertEqual(Lancamento.objects.count(), 2)
+
+    def test_cancelamento_entre_conferencia_e_post_invalida_revisao(self):
+        cafe = Produto.objects.create(nome="Café", preco_centavos=600)
+        lancamento = Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=cafe,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        self.selecionar(self.caixa)
+        url = f"/caixa/atendimentos/{self.atendimento.pk}/fechar/"
+        conferencia = self.client.get(url)
+
+        CancelamentoLancamento.objects.create(
+            lancamento=lancamento,
+            motivo=CancelamentoLancamento.Motivo.DESISTENCIA,
+            descricao="",
+            autor=self.garcom,
+        )
+        conflito = self.client.post(
+            url,
+            {
+                "chave_idempotencia": conferencia.context[
+                    "chave_idempotencia"
+                ],
+                "revisao": conferencia.context["revisao"],
+            },
+        )
+
+        self.assertEqual(conflito.status_code, 409)
+        self.assertContains(conflito, "Total atual: R$ 0,00", status_code=409)
+        self.assertContains(conflito, "Lançamentos cancelados", status_code=409)
+        self.atendimento.refresh_from_db()
+        self.assertEqual(self.atendimento.estado, Atendimento.Estado.ABERTO)
