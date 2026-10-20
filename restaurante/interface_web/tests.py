@@ -1573,3 +1573,209 @@ class ResumoFinalAtendimentoInterfaceTests(TestCase):
         )
 
         self.assertEqual(resposta.status_code, 403)
+
+
+class AtualizacaoPeriodicaInterfaceTests(TestCase):
+    def setUp(self):
+        self.garcom = UsuarioOperacional.objects.create(
+            nome="Garçom 1",
+            papel=UsuarioOperacional.Papel.GARCOM,
+        )
+        self.caixa = UsuarioOperacional.objects.create(
+            nome="Caixa 1",
+            papel=UsuarioOperacional.Papel.CAIXA,
+        )
+        self.comanda = ComandaFisica.objects.create(identificador="001")
+        self.atendimento = Atendimento.objects.create(comanda=self.comanda)
+        self.produto = Produto.objects.create(
+            nome="Café",
+            preco_centavos=600,
+        )
+
+    def selecionar(self, usuario):
+        self.client.post(
+            "/usuarios/selecionar/",
+            {"usuario_id": usuario.pk},
+        )
+
+    def test_consultas_do_garcom_e_caixa_expoem_estado_atualizavel(self):
+        self.selecionar(self.garcom)
+        garcom_antes = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.produto,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        garcom_depois = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+        self.selecionar(self.caixa)
+        caixa = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        for resposta in (garcom_antes, garcom_depois, caixa):
+            self.assertContains(
+                resposta,
+                "/static/interface_web/js/atualizacao_periodica.mjs",
+            )
+            self.assertContains(
+                resposta,
+                "data-atualizacao-periodica",
+                html=False,
+            )
+        self.assertNotEqual(
+            garcom_antes.context["revisao_atualizacao"],
+            garcom_depois.context["revisao_atualizacao"],
+        )
+        self.assertContains(garcom_depois, "Total atual: <strong>R$ 12,00")
+        self.assertContains(
+            caixa,
+            "Café | qtd 2 | R$ 6,00 | subtotal R$ 12,00",
+        )
+
+    def test_conferencia_atualiza_resumo_revisao_e_reflete_fechamento(self):
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.produto,
+            quantidade=1,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        self.selecionar(self.caixa)
+        url = f"/caixa/atendimentos/{self.atendimento.pk}/fechar/"
+        antes = self.client.get(url)
+
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.produto,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        depois = self.client.get(url)
+
+        self.assertContains(
+            antes,
+            "/static/interface_web/js/atualizacao_periodica.mjs",
+        )
+        self.assertContains(antes, "data-atualizacao-periodica", html=False)
+        self.assertNotEqual(
+            antes.context["revisao"],
+            depois.context["revisao"],
+        )
+        self.assertContains(depois, "Total atual: R$ 18,00")
+        self.assertContains(
+            depois,
+            f'name="revisao" value="{depois.context["revisao"]}"',
+            html=False,
+        )
+
+        Atendimento.objects.filter(pk=self.atendimento.pk).update(
+            estado=Atendimento.Estado.ENCERRADO,
+            fechado_por=self.caixa,
+            fechado_em=datetime.now(UTC),
+        )
+        encerrado = self.client.get(url)
+
+        self.assertRedirects(
+            encerrado,
+            f"/caixa/atendimentos/{self.atendimento.pk}/resumo-final/",
+            fetch_redirect_response=False,
+        )
+
+    def test_cancelamento_e_encerramento_externos_aparecem_na_consulta(self):
+        lancamento = Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.produto,
+            quantidade=2,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        self.selecionar(self.garcom)
+        antes = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        CancelamentoLancamento.objects.create(
+            lancamento=lancamento,
+            motivo=CancelamentoLancamento.Motivo.DESISTENCIA,
+            descricao="",
+            autor=self.garcom,
+        )
+        cancelado = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        self.assertNotEqual(
+            antes.context["revisao_atualizacao"],
+            cancelado.context["revisao_atualizacao"],
+        )
+        self.assertContains(cancelado, "Lançamentos cancelados")
+        self.assertContains(cancelado, "Total atual: <strong>R$ 0,00")
+
+        Atendimento.objects.filter(pk=self.atendimento.pk).update(
+            estado=Atendimento.Estado.ENCERRADO,
+            fechado_por=self.caixa,
+            fechado_em=datetime.now(UTC),
+        )
+        encerrado_garcom = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+        self.selecionar(self.caixa)
+        encerrado_caixa = self.client.get(
+            "/caixa/comandas/consultar/",
+            {"identificador": "001"},
+        )
+
+        for resposta in (encerrado_garcom, encerrado_caixa):
+            self.assertContains(
+                resposta,
+                "Comanda disponível — nenhum atendimento aberto",
+            )
+            self.assertNotContains(resposta, "Cancelar lançamento")
+            self.assertNotContains(resposta, "Fechar atendimento")
+
+    def test_consultas_periodicas_nao_criam_nem_repetem_operacoes(self):
+        Lancamento.objects.create(
+            atendimento=self.atendimento,
+            produto=self.produto,
+            quantidade=1,
+            preco_unitario_centavos=600,
+            autor=self.garcom,
+        )
+        self.selecionar(self.garcom)
+        quantidades_antes = (
+            Atendimento.objects.count(),
+            Lancamento.objects.count(),
+            CancelamentoLancamento.objects.count(),
+            RegistroIdempotencia.objects.count(),
+        )
+
+        for _ in range(3):
+            resposta = self.client.get(
+                "/comandas/consultar/",
+                {"identificador": "001"},
+            )
+            self.assertEqual(resposta.status_code, 200)
+
+        self.assertEqual(
+            (
+                Atendimento.objects.count(),
+                Lancamento.objects.count(),
+                CancelamentoLancamento.objects.count(),
+                RegistroIdempotencia.objects.count(),
+            ),
+            quantidades_antes,
+        )

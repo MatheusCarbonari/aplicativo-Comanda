@@ -7,6 +7,7 @@
     <title>Consulta de comanda | Comandas do restaurante</title>
     <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
     <script defer src="{% static 'interface_web/js/proteger_envio.js' %}"></script>
+    <script type="module" src="{% static 'interface_web/js/atualizacao_periodica.mjs' %}"></script>
   </head>
   <body>
     <main class="pagina-inicial">
@@ -17,18 +18,20 @@
         {% else %}
           <h1 id="titulo-principal">Resultado da consulta</h1>
         {% endif %}
-        <p class="estado-comanda" role="status">{{ mensagem }}</p>
         {% include "interface_web/formulario_consulta_comanda.html" %}
-        {% if pode_lancar_adicional %}
-          {% include "interface_web/formulario_lancamento_adicional.html" %}
-          <p>Total atual: <strong>{{ total_formatado }}</strong></p>
-          {% if acoes_cancelamento %}
-            {% include "interface_web/formulario_cancelamento_lancamento.html" %}
+        <div data-atualizacao-periodica data-revisao-atualizacao="{{ revisao_atualizacao }}">
+          <p class="estado-comanda" role="status">{{ mensagem }}</p>
+          {% if pode_lancar_adicional %}
+            {% include "interface_web/formulario_lancamento_adicional.html" %}
+            <p>Total atual: <strong>{{ total_formatado }}</strong></p>
+            {% if acoes_cancelamento %}
+              {% include "interface_web/formulario_cancelamento_lancamento.html" %}
+            {% endif %}
+            {% if historico_cancelamentos %}
+              {% include "interface_web/historico_cancelamentos.html" %}
+            {% endif %}
           {% endif %}
-          {% if historico_cancelamentos %}
-            {% include "interface_web/historico_cancelamentos.html" %}
-          {% endif %}
-        {% endif %}
+        </div>
         <form method="post" action="{% url 'trocar_usuario' %}">
           {% csrf_token %}
           <button type="submit">Trocar usuário</button>

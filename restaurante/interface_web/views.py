@@ -134,6 +134,16 @@ def _formatar_horario_local(valor) -> str:
     )
 
 
+def _calcular_revisao_atualizacao(
+    estado: EstadoComanda,
+    identificador: str,
+    atendimento: Atendimento | None,
+) -> str:
+    if atendimento is not None:
+        return calcular_revisao_fechamento(atendimento)
+    return f"{estado}:{identificador}"
+
+
 def _preparar_historico_cancelamentos(
     atendimento: Atendimento,
 ) -> list[dict[str, object]]:
@@ -301,33 +311,41 @@ def consultar_comanda(request: HttpRequest) -> HttpResponse:
     acoes_cancelamento = []
     historico_cancelamentos = []
     total_formatado = None
-    if pode_lancar_adicional:
-        atendimento = Atendimento.objects.filter(
-            comanda__identificador=resultado.identificador,
-            estado=Atendimento.Estado.ABERTO,
-        ).first()
-        if atendimento is not None:
-            lancamentos_validos = list(
-                atendimento.lancamentos.validos()
-                .select_related("produto", "autor")
-                .order_by("horario", "pk")
-            )
-            acoes_cancelamento = [
-                {"lancamento": lancamento, "chave": str(uuid4())}
-                for lancamento in lancamentos_validos
-            ]
-            historico_cancelamentos = _preparar_historico_cancelamentos(
-                atendimento
-            )
-            total_formatado = _formatar_centavos_brl(
-                calcular_total_atendimento(
-                    (
-                        lancamento.quantidade,
-                        lancamento.preco_unitario_centavos,
-                    )
-                    for lancamento in lancamentos_validos
+    atendimento = None
+    with transaction.atomic():
+        if pode_lancar_adicional:
+            atendimento = Atendimento.objects.filter(
+                comanda__identificador=resultado.identificador,
+                estado=Atendimento.Estado.ABERTO,
+            ).first()
+            pode_lancar_adicional = atendimento is not None
+            if atendimento is not None:
+                lancamentos_validos = list(
+                    atendimento.lancamentos.validos()
+                    .select_related("produto", "autor")
+                    .order_by("horario", "pk")
                 )
-            )
+                acoes_cancelamento = [
+                    {"lancamento": lancamento, "chave": str(uuid4())}
+                    for lancamento in lancamentos_validos
+                ]
+                historico_cancelamentos = _preparar_historico_cancelamentos(
+                    atendimento
+                )
+                total_formatado = _formatar_centavos_brl(
+                    calcular_total_atendimento(
+                        (
+                            lancamento.quantidade,
+                            lancamento.preco_unitario_centavos,
+                        )
+                        for lancamento in lancamentos_validos
+                    )
+                )
+        revisao_atualizacao = _calcular_revisao_atualizacao(
+            resultado.estado,
+            resultado.identificador,
+            atendimento,
+        )
     return render(
         request,
         "interface_web/consulta_comanda.html",
@@ -341,6 +359,7 @@ def consultar_comanda(request: HttpRequest) -> HttpResponse:
             "historico_cancelamentos": historico_cancelamentos,
             "motivos_cancelamento": CancelamentoLancamento.Motivo.choices,
             "total_formatado": total_formatado,
+            "revisao_atualizacao": revisao_atualizacao,
             "url_consulta": "consultar_comanda",
         },
     )
@@ -369,26 +388,36 @@ def consultar_comanda_caixa(request: HttpRequest) -> HttpResponse:
     historico_cancelamentos = []
     total_formatado = _formatar_centavos_brl(0)
     atendimento = None
-    if resultado.estado == EstadoComanda.EM_ATENDIMENTO:
-        atendimento = Atendimento.objects.get(
-            comanda__identificador=resultado.identificador,
-            estado=Atendimento.Estado.ABERTO,
+    with transaction.atomic():
+        if resultado.estado == EstadoComanda.EM_ATENDIMENTO:
+            atendimento = Atendimento.objects.filter(
+                comanda__identificador=resultado.identificador,
+                estado=Atendimento.Estado.ABERTO,
+            ).first()
+            if atendimento is not None:
+                resumo = _preparar_resumo_caixa(atendimento)
+                itens_consolidados = resumo["itens_consolidados"]
+                total_formatado = resumo["total_formatado"]
+                historico_cancelamentos = resumo[
+                    "historico_cancelamentos"
+                ]
+        revisao_atualizacao = _calcular_revisao_atualizacao(
+            resultado.estado,
+            resultado.identificador,
+            atendimento,
         )
-        resumo = _preparar_resumo_caixa(atendimento)
-        itens_consolidados = resumo["itens_consolidados"]
-        total_formatado = resumo["total_formatado"]
-        historico_cancelamentos = resumo["historico_cancelamentos"]
     return render(
         request,
         "interface_web/consulta_comanda_caixa.html",
         {
             "identificador": resultado.identificador,
             "mensagem": mensagens[resultado.estado],
-            "em_atendimento": resultado.estado == EstadoComanda.EM_ATENDIMENTO,
+            "em_atendimento": atendimento is not None,
             "itens_consolidados": itens_consolidados,
             "total_formatado": total_formatado,
             "historico_cancelamentos": historico_cancelamentos,
             "atendimento": atendimento,
+            "revisao_atualizacao": revisao_atualizacao,
             "url_consulta": "consultar_comanda_caixa",
             "foco_automatico_consulta": True,
         },
@@ -458,11 +487,13 @@ def confirmar_fechamento_atendimento(
 
     atendimento = (
         Atendimento.objects.select_related("comanda")
-        .filter(pk=atendimento_id, estado=Atendimento.Estado.ABERTO)
+        .filter(pk=atendimento_id)
         .first()
     )
     if atendimento is None:
-        return HttpResponse("Atendimento aberto não encontrado.", status=404)
+        return HttpResponse("Atendimento não encontrado.", status=404)
+    if atendimento.estado == Atendimento.Estado.ENCERRADO:
+        return redirect("resumo_final_atendimento", atendimento.pk)
 
     return _renderizar_confirmacao_fechamento(request, atendimento)
 

@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Consulta do Caixa | Comandas do restaurante</title>
     <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
+    <script type="module" src="{% static 'interface_web/js/atualizacao_periodica.mjs' %}"></script>
   </head>
   <body>
     <main class="pagina-inicial">
@@ -13,23 +14,25 @@
         <p class="rotulo">Consulta do Caixa</p>
         <h1 id="titulo-principal">Resumo do atendimento</h1>
         {% if identificador %}<p>Comanda {{ identificador }}</p>{% endif %}
-        <p class="estado-comanda" role="status">{{ mensagem }}</p>
         {% include "interface_web/formulario_consulta_comanda.html" %}
-        {% if em_atendimento %}
-          <section id="resumo-atendimento" class="secao-operacional" aria-labelledby="titulo-resumo-atendimento">
-            <h2 id="titulo-resumo-atendimento">Consumos válidos</h2>
-            {% for item in itens_consolidados %}
-              <p>{{ item.produto }} | qtd {{ item.quantidade }} | {{ item.preco_unitario }} | subtotal {{ item.subtotal }}</p>
-            {% endfor %}
-            <p><strong>Total atual: {{ total_formatado }}</strong></p>
-          </section>
-          {% if historico_cancelamentos %}
-            {% include "interface_web/historico_cancelamentos.html" %}
+        <div data-atualizacao-periodica data-revisao-atualizacao="{{ revisao_atualizacao }}">
+          <p class="estado-comanda" role="status">{{ mensagem }}</p>
+          {% if em_atendimento %}
+            <section id="resumo-atendimento" class="secao-operacional" aria-labelledby="titulo-resumo-atendimento">
+              <h2 id="titulo-resumo-atendimento">Consumos válidos</h2>
+              {% for item in itens_consolidados %}
+                <p>{{ item.produto }} | qtd {{ item.quantidade }} | {{ item.preco_unitario }} | subtotal {{ item.subtotal }}</p>
+              {% endfor %}
+              <p><strong>Total atual: {{ total_formatado }}</strong></p>
+            </section>
+            {% if historico_cancelamentos %}
+              {% include "interface_web/historico_cancelamentos.html" %}
+            {% endif %}
+            <a class="acao-secundaria" href="{% url 'fechar_atendimento' atendimento.pk %}">
+              Fechar atendimento
+            </a>
           {% endif %}
-          <a class="acao-secundaria" href="{% url 'fechar_atendimento' atendimento.pk %}">
-            Fechar atendimento
-          </a>
-        {% endif %}
+        </div>
         <form method="post" action="{% url 'trocar_usuario' %}">
           {% csrf_token %}
           <button type="submit">Trocar usuário</button>

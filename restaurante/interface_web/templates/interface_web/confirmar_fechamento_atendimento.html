@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Confirmar fechamento | Comandas do restaurante</title>
     <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
+    <script type="module" src="{% static 'interface_web/js/atualizacao_periodica.mjs' %}"></script>
   </head>
   <body>
     <main class="pagina-inicial">
@@ -13,28 +14,30 @@
         <p class="rotulo">Fechamento do Atendimento</p>
         <h1 id="titulo-principal">Confirmar fechamento</h1>
         <p>Comanda {{ atendimento.comanda.identificador }}</p>
-        {% if erro_revisao %}
-          <p class="aviso" role="alert">{{ erro_revisao }}</p>
-        {% endif %}
-        <section class="secao-operacional" aria-labelledby="titulo-resumo-fechamento">
-          <h2 id="titulo-resumo-fechamento">Resumo atual</h2>
-          {% for item in itens_consolidados %}
-            <p>{{ item.produto }} | qtd {{ item.quantidade }} | {{ item.preco_unitario }} | subtotal {{ item.subtotal }}</p>
-          {% empty %}
-            <p>Nenhum consumo válido.</p>
-          {% endfor %}
-          <p><strong>Total atual: {{ total_formatado }}</strong></p>
-        </section>
-        {% if historico_cancelamentos %}
-          {% include "interface_web/historico_cancelamentos.html" %}
-        {% endif %}
-        <p class="aviso" role="alert">O fechamento é irreversível.</p>
-        <form method="post" action="{% url 'fechar_atendimento' atendimento.pk %}">
-          {% csrf_token %}
-          <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
-          <input type="hidden" name="revisao" value="{{ revisao }}">
-          <button type="submit">Fechar atendimento</button>
-        </form>
+        <div data-atualizacao-periodica data-revisao-atualizacao="{{ revisao }}">
+          {% if erro_revisao %}
+            <p class="aviso" role="alert">{{ erro_revisao }}</p>
+          {% endif %}
+          <section class="secao-operacional" aria-labelledby="titulo-resumo-fechamento">
+            <h2 id="titulo-resumo-fechamento">Resumo atual</h2>
+            {% for item in itens_consolidados %}
+              <p>{{ item.produto }} | qtd {{ item.quantidade }} | {{ item.preco_unitario }} | subtotal {{ item.subtotal }}</p>
+            {% empty %}
+              <p>Nenhum consumo válido.</p>
+            {% endfor %}
+            <p><strong>Total atual: {{ total_formatado }}</strong></p>
+          </section>
+          {% if historico_cancelamentos %}
+            {% include "interface_web/historico_cancelamentos.html" %}
+          {% endif %}
+          <p class="aviso" role="alert">O fechamento é irreversível.</p>
+          <form method="post" action="{% url 'fechar_atendimento' atendimento.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
+            <input type="hidden" name="revisao" value="{{ revisao }}">
+            <button type="submit">Fechar atendimento</button>
+          </form>
+        </div>
         <a class="acao-secundaria" href="{% url 'consultar_comanda_caixa' %}?identificador={{ atendimento.comanda.identificador|urlencode }}">
           Voltar ao resumo
         </a>
