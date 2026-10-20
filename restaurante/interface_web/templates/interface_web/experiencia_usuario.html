@@ -6,15 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ titulo }} | Comandas do restaurante</title>
     <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
-    <script defer src="{% static 'interface_web/js/proteger_envio.js' %}"></script>
+    <script type="module" src="{% static 'interface_web/js/atualizacao_periodica.mjs' %}"></script>
   </head>
   <body>
     <main class="pagina-inicial">
-      <section class="cartao" aria-labelledby="titulo-principal">
+      <section class="cartao" aria-labelledby="titulo-principal" data-gerenciador-comunicacao data-url-saude="{% url 'saude_backend' %}">
         <p class="rotulo">{{ usuario.nome }}</p>
         <h1 id="titulo-principal">{{ titulo }}</h1>
         <p class="descricao">{{ descricao }}</p>
         {% include "interface_web/formulario_consulta_comanda.html" %}
+        {% include "interface_web/estado_comunicacao.html" %}
         {% if pode_lancar %}
           {% include "interface_web/formulario_primeiro_lancamento.html" %}
         {% endif %}

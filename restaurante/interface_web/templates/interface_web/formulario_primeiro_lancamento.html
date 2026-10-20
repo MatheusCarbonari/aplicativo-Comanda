@@ -3,7 +3,7 @@
   {% if erro_lancamento %}
     <p class="aviso" role="alert">{{ erro_lancamento }}</p>
   {% endif %}
-  <form class="formulario-operacional" method="post" action="{% url 'registrar_primeiro_lancamento' %}" data-envio-unico>
+  <form class="formulario-operacional" method="post" action="{% url 'registrar_primeiro_lancamento' %}" data-envio-unico data-acao-mutavel data-url-verificacao="{% url 'consultar_comanda' %}">
     {% csrf_token %}
     <input type="hidden" name="chave_idempotencia" value="{{ chave_idempotencia }}">
     <label for="identificador-lancamento">Identificador da comanda</label>

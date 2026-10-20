@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Consulta de comanda | Comandas do restaurante</title>
     <link rel="stylesheet" href="{% static 'interface_web/css/base.css' %}">
-    <script defer src="{% static 'interface_web/js/proteger_envio.js' %}"></script>
     <script type="module" src="{% static 'interface_web/js/atualizacao_periodica.mjs' %}"></script>
   </head>
   <body>
@@ -19,6 +18,7 @@
           <h1 id="titulo-principal">Resultado da consulta</h1>
         {% endif %}
         {% include "interface_web/formulario_consulta_comanda.html" %}
+        {% include "interface_web/estado_comunicacao.html" %}
         <div data-atualizacao-periodica data-revisao-atualizacao="{{ revisao_atualizacao }}">
           <p class="estado-comanda" role="status">{{ mensagem }}</p>
           {% if pode_lancar_adicional %}

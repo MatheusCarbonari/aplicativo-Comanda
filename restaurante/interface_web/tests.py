@@ -342,7 +342,7 @@ class PrimeiroLancamentoInterfaceTests(TestCase):
         self.assertContains(resposta, 'name="chave_idempotencia"', html=False)
         self.assertContains(
             resposta,
-            "/static/interface_web/js/proteger_envio.js",
+            "/static/interface_web/js/atualizacao_periodica.mjs",
         )
         UUID(resposta.context["chave_idempotencia"])
 
@@ -1779,3 +1779,57 @@ class AtualizacaoPeriodicaInterfaceTests(TestCase):
             ),
             quantidades_antes,
         )
+
+    def test_telas_atualizaveis_expoem_contrato_visual_de_comunicacao(self):
+        self.selecionar(self.garcom)
+        consulta = self.client.get(
+            "/comandas/consultar/",
+            {"identificador": "001"},
+        )
+        self.selecionar(self.caixa)
+        fechamento = self.client.get(
+            f"/caixa/atendimentos/{self.atendimento.pk}/fechar/"
+        )
+
+        for resposta in (consulta, fechamento):
+            with self.subTest(url=resposta.request["PATH_INFO"]):
+                self.assertContains(
+                    resposta,
+                    "Sem comunicação com o servidor",
+                )
+                self.assertContains(
+                    resposta,
+                    "Dados exibidos podem estar desatualizados",
+                )
+                self.assertContains(
+                    resposta,
+                    "data-aviso-comunicacao",
+                    html=False,
+                )
+                self.assertContains(
+                    resposta,
+                    "data-aviso-resultado-incerto",
+                    html=False,
+                )
+                self.assertContains(
+                    resposta,
+                    "data-acao-mutavel",
+                    html=False,
+                )
+
+    def test_primeiro_lancamento_usa_saude_e_consulta_comanda_na_recuperacao(self):
+        self.selecionar(self.garcom)
+
+        resposta = self.client.get("/garcom/")
+
+        self.assertContains(
+            resposta,
+            "/static/interface_web/js/atualizacao_periodica.mjs",
+        )
+        self.assertContains(resposta, 'data-url-saude="/saude/"', html=False)
+        self.assertContains(
+            resposta,
+            'data-url-verificacao="/comandas/consultar/"',
+            html=False,
+        )
+        self.assertContains(resposta, "data-acao-mutavel", html=False)

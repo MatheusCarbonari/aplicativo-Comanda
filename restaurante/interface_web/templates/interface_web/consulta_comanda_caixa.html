@@ -15,6 +15,7 @@
         <h1 id="titulo-principal">Resumo do atendimento</h1>
         {% if identificador %}<p>Comanda {{ identificador }}</p>{% endif %}
         {% include "interface_web/formulario_consulta_comanda.html" %}
+        {% include "interface_web/estado_comunicacao.html" %}
         <div data-atualizacao-periodica data-revisao-atualizacao="{{ revisao_atualizacao }}">
           <p class="estado-comanda" role="status">{{ mensagem }}</p>
           {% if em_atendimento %}
