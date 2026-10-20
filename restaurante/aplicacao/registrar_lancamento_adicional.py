@@ -1,5 +1,10 @@
 from dataclasses import asdict, dataclass
 
+from django.db import IntegrityError
+
+from restaurante.aplicacao.contencao_persistencia import (
+    executar_com_retry_de_contencao,
+)
 from restaurante.aplicacao.idempotencia import executar_idempotente
 from restaurante.aplicacao.registrar_primeiro_lancamento import (
     ComandaNaoEncontrada,
@@ -12,6 +17,9 @@ from restaurante.aplicacao.usuarios_operacionais import (
 from restaurante.dominio.lancamentos import (
     calcular_total_atendimento,
     validar_quantidade,
+)
+from restaurante.persistencia.conflitos_sqlite import (
+    e_lancamento_em_atendimento_encerrado,
 )
 from restaurante.persistencia.models import (
     Atendimento,
@@ -80,13 +88,18 @@ def registrar_lancamento_adicional(
         if atendimento is None:
             raise AtendimentoAbertoNaoEncontrado
 
-        lancamento = Lancamento.objects.create(
-            atendimento=atendimento,
-            produto=produto,
-            quantidade=quantidade_validada,
-            preco_unitario_centavos=produto.preco_centavos,
-            autor=usuario,
-        )
+        try:
+            lancamento = Lancamento.objects.create(
+                atendimento=atendimento,
+                produto=produto,
+                quantidade=quantidade_validada,
+                preco_unitario_centavos=produto.preco_centavos,
+                autor=usuario,
+            )
+        except IntegrityError as erro:
+            if not e_lancamento_em_atendimento_encerrado(erro):
+                raise
+            raise AtendimentoAbertoNaoEncontrado from erro
         total_centavos = calcular_total_atendimento(
             atendimento.lancamentos.validos().values_list(
                 "quantidade", "preco_unitario_centavos"
@@ -105,10 +118,12 @@ def registrar_lancamento_adicional(
             )
         )
 
-    resultado = executar_idempotente(
-        chave=chave_idempotencia,
-        operacao=OPERACAO_REGISTRAR_LANCAMENTO_ADICIONAL,
-        conteudo=conteudo,
-        executar=executar,
+    resultado = executar_com_retry_de_contencao(
+        lambda: executar_idempotente(
+            chave=chave_idempotencia,
+            operacao=OPERACAO_REGISTRAR_LANCAMENTO_ADICIONAL,
+            conteudo=conteudo,
+            executar=executar,
+        )
     )
     return ResultadoLancamentoAdicional(**resultado)

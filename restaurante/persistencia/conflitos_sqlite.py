@@ -43,6 +43,16 @@ def e_conflito_de_cancelamento(erro: IntegrityError) -> bool:
     )
 
 
+def e_lancamento_em_atendimento_encerrado(erro: IntegrityError) -> bool:
+    causa = erro.__cause__
+    return (
+        isinstance(causa, sqlite3.IntegrityError)
+        and getattr(causa, "sqlite_errorcode", None)
+        == sqlite3.SQLITE_CONSTRAINT_TRIGGER
+        and str(causa) == "lancamento_atendimento_encerrado"
+    )
+
+
 def _e_conflito_unicidade(
     erro: IntegrityError,
     tabela: str,

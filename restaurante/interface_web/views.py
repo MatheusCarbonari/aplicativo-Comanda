@@ -563,6 +563,19 @@ def registrar_lancamento_adicional(request: HttpRequest) -> HttpResponse:
         return _redirecionar_selecao_invalida(request)
     except PapelNaoPermitido:
         return HttpResponseForbidden("Usuário operacional sem permissão.")
+    except PersistenciaTemporariamenteIndisponivel:
+        usuario = _buscar_usuario(
+            request.session.get(CHAVE_USUARIO_OPERACIONAL)
+        )
+        return render(
+            request,
+            "interface_web/experiencia_usuario.html",
+            _contexto_garcom(
+                usuario,
+                "Banco ocupado temporariamente. Tente novamente",
+            ),
+            status=503,
+        )
     except ConflitoIdempotencia:
         usuario = _buscar_usuario(
             request.session.get(CHAVE_USUARIO_OPERACIONAL)

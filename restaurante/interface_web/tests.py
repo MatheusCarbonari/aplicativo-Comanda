@@ -589,6 +589,42 @@ class LancamentoAdicionalInterfaceTests(TestCase):
         self.assertEqual(repetida.status_code, 200)
         self.assertEqual(self.atendimento.lancamentos.count(), 1)
 
+    def test_contencao_persistente_retorna_503_sem_lancamento_parcial(self):
+        self.selecionar(self.garcom)
+        tentativas = 0
+
+        def bloquear_insercao(execute, sql, params, many, context):
+            nonlocal tentativas
+            if 'insert into "persistencia_lancamento"' in sql.lower():
+                tentativas += 1
+                raise OperationalError("database is locked")
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(bloquear_insercao):
+            resposta = self.client.post(
+                "/lancamentos/adicional/",
+                {
+                    "identificador_comanda": "001",
+                    "produto_id": self.cafe.pk,
+                    "quantidade": "1",
+                    "chave_idempotencia": "contencao-adicional-interface",
+                },
+            )
+
+        self.assertEqual(resposta.status_code, 503)
+        self.assertContains(
+            resposta,
+            "Banco ocupado temporariamente. Tente novamente",
+            status_code=503,
+        )
+        self.assertEqual(tentativas, 2)
+        self.assertEqual(Lancamento.objects.count(), 0)
+        self.assertFalse(
+            RegistroIdempotencia.objects.filter(
+                chave="contencao-adicional-interface"
+            ).exists()
+        )
+
     def test_total_atual_e_exibido_em_brl(self):
         Lancamento.objects.create(
             atendimento=self.atendimento,
