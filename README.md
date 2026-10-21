@@ -99,6 +99,49 @@ identificador técnico da execução, o nome do arquivo validado no sucesso e o
 tipo do erro na falha. O conteúdo do banco não é registrado. Esses backups
 locais não protegem contra perda ou falha física do mesmo computador.
 
+## Backup diário no Windows
+
+O comando diário reutiliza o backup seguro acima e, somente depois do sucesso,
+mantém os sete arquivos `restaurante-*.sqlite3` mais recentes:
+
+```powershell
+.venv\Scripts\python.exe manage.py executar_backup_diario
+```
+
+O script `scripts\executar_backup_diario.ps1` define o diretório de trabalho
+como a raiz do projeto e usa o Python de `.venv`. Para instalar uma tarefa
+diária às 03:00, abra o PowerShell como administrador na raiz do projeto e
+execute:
+
+```powershell
+$raiz = (Resolve-Path .).Path
+$acao = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$raiz\scripts\executar_backup_diario.ps1`""
+schtasks.exe /Create /TN "Restaurante-BackupDiario" /SC DAILY /ST 03:00 /RU SYSTEM /RL HIGHEST /TR $acao /F
+```
+
+Para conferir a configuração e, opcionalmente, disparar uma execução de teste:
+
+```powershell
+schtasks.exe /Query /TN "Restaurante-BackupDiario" /V /FO LIST
+schtasks.exe /Run /TN "Restaurante-BackupDiario"
+```
+
+Para remover o agendamento:
+
+```powershell
+schtasks.exe /Delete /TN "Restaurante-BackupDiario" /F
+```
+
+O lock local impede duas execuções de `executar_backup_diario` ao mesmo tempo.
+Uma segunda execução termina com erro compreensível e não inicia backup ou
+retenção. A retenção reconhece somente nomes válidos com timestamp UTC e ignora
+arquivos `.incompleto`; se o backup falhar, nenhum backup antigo é removido.
+
+A lógica do comando não depende do Agendador de Tarefas. Em uma implantação
+Linux futura, o mesmo `.venv/bin/python manage.py executar_backup_diario` poderá
+ser chamado por `cron` ou `systemd timer`, sem alterar backup ou retenção. Este
+ticket não instala um scheduler Linux.
+
 ## Preparar banco e dados iniciais
 
 Crie ou atualize somente a estrutura do banco:
