@@ -1,6 +1,6 @@
 from dataclasses import asdict, dataclass
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 
 from restaurante.aplicacao.contencao_persistencia import (
     executar_com_retry_de_contencao,
@@ -18,6 +18,7 @@ from restaurante.dominio.lancamentos import (
     calcular_total_atendimento,
     validar_quantidade,
 )
+from restaurante.infraestrutura.logging_estruturado import registrar_evento
 from restaurante.persistencia.conflitos_sqlite import (
     e_lancamento_em_atendimento_encerrado,
 )
@@ -126,4 +127,15 @@ def registrar_lancamento_adicional(
             executar=executar,
         )
     )
-    return ResultadoLancamentoAdicional(**resultado)
+    resultado_confirmado = ResultadoLancamentoAdicional(**resultado)
+    transaction.on_commit(
+        lambda: registrar_evento(
+            "operacao_dominio_confirmada",
+            operation=OPERACAO_REGISTRAR_LANCAMENTO_ADICIONAL,
+            operation_id=str(chave_idempotencia),
+            atendimento_id=resultado_confirmado.atendimento_id,
+            lancamento_id=resultado_confirmado.lancamento_id,
+            usuario_operacional_id=chave_usuario,
+        )
+    )
+    return resultado_confirmado

@@ -37,6 +37,42 @@ detalhes internos. O endpoint não depende de sessão ou Usuário operacional.
 .venv\Scripts\python.exe manage.py test
 ```
 
+## Logs locais
+
+A aplicação grava logs estruturados em JSONL, uma linha JSON por evento, no
+arquivo persistente `.local/logs/restaurante.jsonl`. Cada registro contém
+`timestamp`, `level` e `event`; operações confirmadas acrescentam somente
+identificadores técnicos úteis, como `operation_id`, `atendimento_id`,
+`lancamento_id`, `cancelamento_id` e `usuario_operacional_id` quando aplicáveis.
+
+O arquivo gira ao atingir 5 MiB. São mantidos cinco backups, nomeados de
+`restaurante.jsonl.1` a `restaurante.jsonl.5`; quando o limite é excedido, o
+backup mais antigo é descartado pela rotação padrão do Python. Para consultar os
+eventos mais recentes no PowerShell:
+
+```powershell
+Get-Content .local\logs\restaurante.jsonl -Tail 100
+```
+
+Os logs não recebem nome do Produto, quantidade, preço, subtotal, Total, motivo
+ou descrição de cancelamento, conteúdo de formulários, cookies, sessão, CSRF,
+credenciais ou headers sensíveis. Erros registram o tipo da exceção e o stack
+trace técnico sem copiar a mensagem da exceção.
+
+Somente o processo operacional que serve a aplicação registra
+`aplicacao_iniciada` e tenta registrar `aplicacao_encerrada` no encerramento
+normal. No `runserver`, o processo auxiliar do autoreload é ignorado; entradas
+WSGI/ASGI e `runserver --noreload` também são reconhecidos como operacionais.
+Testes e comandos administrativos como `check` e `makemigrations` não geram esse
+ciclo no log operacional. Durante `manage.py test`, qualquer outro evento usa um
+arquivo isolado por processo sob `.local/testes/`.
+
+Uma interrupção abrupta do processo ou do computador pode impedir o evento de
+encerramento. Falhas ao abrir, formatar, girar ou escrever o log são ignoradas
+pela fronteira de observabilidade e não mudam o commit, rollback ou resultado de
+uma operação de domínio. Eventos de sucesso das mutações são agendados somente
+para depois do commit efetivo; um rollback externo descarta o evento pendente.
+
 ## Preparar banco e dados iniciais
 
 Crie ou atualize somente a estrutura do banco:

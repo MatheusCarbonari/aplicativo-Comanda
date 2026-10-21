@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass
 
+from django.db import transaction
 from django.utils import timezone
 
 from restaurante.aplicacao.contencao_persistencia import (
@@ -13,6 +14,7 @@ from restaurante.aplicacao.usuarios_operacionais import (
     buscar_caixa,
     normalizar_identificador_usuario,
 )
+from restaurante.infraestrutura.logging_estruturado import registrar_evento
 from restaurante.persistencia.models import Atendimento
 
 
@@ -99,7 +101,17 @@ def fechar_atendimento(
             executar=executar,
         )
     )
-    return ResultadoFechamentoAtendimento(**resultado)
+    resultado_confirmado = ResultadoFechamentoAtendimento(**resultado)
+    transaction.on_commit(
+        lambda: registrar_evento(
+            "operacao_dominio_confirmada",
+            operation=OPERACAO_FECHAR_ATENDIMENTO,
+            operation_id=str(chave_idempotencia),
+            atendimento_id=resultado_confirmado.atendimento_id,
+            usuario_operacional_id=chave_usuario,
+        )
+    )
+    return resultado_confirmado
 
 
 def _normalizar_atendimento(atendimento_id: object) -> int:

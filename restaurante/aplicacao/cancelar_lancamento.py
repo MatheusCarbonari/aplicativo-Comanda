@@ -11,6 +11,7 @@ from restaurante.aplicacao.usuarios_operacionais import (
     normalizar_identificador_usuario,
 )
 from restaurante.dominio.lancamentos import calcular_total_atendimento
+from restaurante.infraestrutura.logging_estruturado import registrar_evento
 from restaurante.persistencia.conflitos_sqlite import (
     e_conflito_de_cancelamento,
 )
@@ -128,7 +129,19 @@ def cancelar_lancamento(
             executar=executar,
         )
     )
-    return ResultadoCancelamentoLancamento(**resultado)
+    resultado_confirmado = ResultadoCancelamentoLancamento(**resultado)
+    transaction.on_commit(
+        lambda: registrar_evento(
+            "operacao_dominio_confirmada",
+            operation=OPERACAO_CANCELAR_LANCAMENTO,
+            operation_id=str(chave_idempotencia),
+            atendimento_id=resultado_confirmado.atendimento_id,
+            lancamento_id=resultado_confirmado.lancamento_id,
+            cancelamento_id=resultado_confirmado.cancelamento_id,
+            usuario_operacional_id=chave_usuario,
+        )
+    )
+    return resultado_confirmado
 
 
 def _normalizar_lancamento(lancamento_id: object) -> int:

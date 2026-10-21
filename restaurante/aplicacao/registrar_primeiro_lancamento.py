@@ -14,6 +14,7 @@ from restaurante.dominio.lancamentos import (
     QuantidadeInvalida,
     validar_quantidade,
 )
+from restaurante.infraestrutura.logging_estruturado import registrar_evento
 from restaurante.persistencia.models import (
     Atendimento,
     ComandaFisica,
@@ -111,4 +112,15 @@ def registrar_primeiro_lancamento(
             executar=executar,
         )
     )
-    return ResultadoPrimeiroLancamento(**resultado)
+    resultado_confirmado = ResultadoPrimeiroLancamento(**resultado)
+    transaction.on_commit(
+        lambda: registrar_evento(
+            "operacao_dominio_confirmada",
+            operation=OPERACAO_REGISTRAR_PRIMEIRO_LANCAMENTO,
+            operation_id=str(chave_idempotencia),
+            atendimento_id=resultado_confirmado.atendimento_id,
+            lancamento_id=resultado_confirmado.lancamento_id,
+            usuario_operacional_id=chave_usuario,
+        )
+    )
+    return resultado_confirmado
