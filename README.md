@@ -73,6 +73,32 @@ pela fronteira de observabilidade e não mudam o commit, rollback ou resultado d
 uma operação de domínio. Eventos de sucesso das mutações são agendados somente
 para depois do commit efetivo; um rollback externo descarta o evento pendente.
 
+## Backup SQLite manual
+
+Para criar um snapshot consistente do banco SQLite em uso, execute:
+
+```powershell
+.venv\Scripts\python.exe manage.py criar_backup
+```
+
+O comando usa `sqlite3.Connection.backup()` e grava a cópia em
+`.local/backups/`. O nome inclui data e horário UTC com microssegundos, por
+exemplo `restaurante-20261021T173045123456Z.sqlite3`. Uma colisão recebe um
+sufixo numérico e nunca substitui silenciosamente um arquivo existente.
+
+A cópia é criada primeiro com a extensão `.incompleto`. Depois que a conexão
+de destino é fechada, o comando reabre o arquivo e exige que
+`PRAGMA integrity_check` retorne `ok`; somente então publica o nome `.sqlite3`.
+Em caso de falha, o comando retorna erro, tenta remover o artefato temporário e
+não altera o banco operacional. Se a remoção também falhar, o nome
+`.incompleto` deixa claro que o arquivo não deve ser usado como backup válido.
+
+Os logs estruturados registram `backup_sqlite_iniciado`,
+`backup_sqlite_concluido` ou `backup_sqlite_falhou`, usando somente o
+identificador técnico da execução, o nome do arquivo validado no sucesso e o
+tipo do erro na falha. O conteúdo do banco não é registrado. Esses backups
+locais não protegem contra perda ou falha física do mesmo computador.
+
 ## Preparar banco e dados iniciais
 
 Crie ou atualize somente a estrutura do banco:

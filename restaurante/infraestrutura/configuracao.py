@@ -11,6 +11,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 DIRETORIO_DADOS = BASE_DIR / ".local" / "dados"
 DIRETORIO_TESTES = BASE_DIR / ".local" / "testes"
 DIRETORIO_LOGS = BASE_DIR / ".local" / "logs"
+DIRETORIO_BACKUPS = BASE_DIR / ".local" / "backups"
 CAMINHO_BANCO = DIRETORIO_DADOS / "restaurante.sqlite3"
 CAMINHO_BANCO_TESTES = DIRETORIO_TESTES / "restaurante-testes.sqlite3"
 CAMINHO_LOG_APLICACAO = DIRETORIO_LOGS / "restaurante.jsonl"
