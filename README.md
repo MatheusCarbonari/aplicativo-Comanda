@@ -37,6 +37,29 @@ detalhes internos. O endpoint não depende de sessão ou Usuário operacional.
 .venv\Scripts\python.exe manage.py test
 ```
 
+### Verificar durabilidade após encerramento abrupto
+
+A verificação em nível de processo usa bancos SQLite persistentes e isolados em
+`.local/testes/`, aplica as migrations reais e confirma `journal_mode=WAL` e
+`synchronous=FULL`. Execute-a com:
+
+```powershell
+.venv\Scripts\python.exe manage.py test restaurante.aplicacao.test_durabilidade_encerramento_abrupto
+```
+
+O processo pai aguarda mensagens JSON explícitas do auxiliar. O sinal
+`antes_commit` é emitido dentro de uma transação externa ainda aberta; o sinal
+`depois_commit` só aparece depois que essa transação termina e o commit efetivo
+foi confirmado. Em ambos os pontos, o pai usa encerramento abrupto real do
+processo e outro processo Django reabre o mesmo arquivo para consultar o estado
+persistido. Os logs eventualmente produzidos ficam no diretório temporário do
+cenário, separados do log operacional.
+
+Essa simulação comprova o comportamento do processo com SQLite em WAL e
+`synchronous=FULL`, mas matar um processo não equivale a uma queda física de
+energia. Ela não reproduz perda de energia durante o flush do hardware, cache
+volátil de disco ou controladora, nem falha física de armazenamento.
+
 ## Logs locais
 
 A aplicação grava logs estruturados em JSONL, uma linha JSON por evento, no
