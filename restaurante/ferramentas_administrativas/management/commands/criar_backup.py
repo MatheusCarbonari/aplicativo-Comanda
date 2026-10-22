@@ -19,6 +19,14 @@ from restaurante.infraestrutura.logging_estruturado import (
 class Command(BaseCommand):
     help = "Cria e valida um snapshot seguro do banco SQLite em uso."
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--finalidade",
+            choices=("rotina", "pre-migracao"),
+            default="rotina",
+            help="Define a identificação técnica do backup publicado.",
+        )
+
     def handle(self, *args, **options):
         if connection.vendor != "sqlite":
             raise CommandError("O comando criar_backup requer um banco SQLite.")
@@ -42,11 +50,14 @@ class Command(BaseCommand):
             ) from erro
 
         identificador = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        prefixo = "restaurante"
+        if options["finalidade"] == "pre-migracao":
+            prefixo = "restaurante-pre-migracao"
         temporario: Path | None = None
         try:
             with NamedTemporaryFile(
                 dir=diretorio,
-                prefix=f".restaurante-{identificador}-",
+                prefix=f".{prefixo}-{identificador}-",
                 suffix=".incompleto",
                 delete=False,
             ) as arquivo_temporario:
@@ -67,6 +78,7 @@ class Command(BaseCommand):
                 temporario,
                 diretorio,
                 identificador,
+                prefixo,
             )
             temporario = None
         except CommandError as erro:
@@ -106,11 +118,14 @@ class Command(BaseCommand):
         temporario: Path,
         diretorio: Path,
         identificador: str,
+        prefixo: str,
     ) -> Path:
         sufixo = 0
         while True:
             complemento = "" if sufixo == 0 else f"-{sufixo}"
-            destino = diretorio / f"restaurante-{identificador}{complemento}.sqlite3"
+            destino = diretorio / (
+                f"{prefixo}-{identificador}{complemento}.sqlite3"
+            )
             try:
                 os.link(temporario, destino)
             except FileExistsError:

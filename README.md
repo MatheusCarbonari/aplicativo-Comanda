@@ -99,6 +99,24 @@ identificador técnico da execução, o nome do arquivo validado no sucesso e o
 tipo do erro na falha. O conteúdo do banco não é registrado. Esses backups
 locais não protegem contra perda ou falha física do mesmo computador.
 
+## Migrações com backup
+
+Para aplicar migrations no banco operacional, use o procedimento único:
+
+```powershell
+.venv\Scripts\python.exe manage.py migrar_com_backup
+```
+
+O comando cria e valida primeiro um backup pelo mesmo mecanismo de
+`criar_backup`. A cópia é publicada como
+`restaurante-pre-migracao-<timestamp UTC>.sqlite3`, portanto não participa da
+retenção dos backups diários. Somente depois da publicação o comando público
+`migrate` do Django é executado. Argumentos usuais continuam disponíveis, por
+exemplo `migrar_com_backup persistencia 0008`.
+
+Se o backup falhar, nenhuma migration começa. Se a migration falhar, o backup
+já confirmado permanece disponível e não há tentativa automática de restore.
+
 ## Backup diário no Windows
 
 O comando diário reutiliza o backup seguro acima e, somente depois do sucesso,
@@ -147,7 +165,7 @@ ticket não instala um scheduler Linux.
 Crie ou atualize somente a estrutura do banco:
 
 ```powershell
-.venv\Scripts\python.exe manage.py migrate
+.venv\Scripts\python.exe manage.py migrar_com_backup
 ```
 
 Depois, execute explicitamente a carga de demonstração:
