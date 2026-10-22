@@ -217,6 +217,31 @@ sobrescreve preços ou papéis alterados, não remove registros extras e pode se
 executado novamente sem produzir duplicatas. Iniciar o Django, importar módulos
 ou executar a migração estrutural não dispara essa carga automaticamente.
 
+### Reinicializar dados de desenvolvimento
+
+O reset completo é exclusivo do ambiente de desenvolvimento com `DEBUG=True`,
+nunca roda no startup e não aparece na interface web. Execute explicitamente:
+
+```powershell
+.venv\Scripts\python.exe manage.py reinicializar_dados_desenvolvimento
+```
+
+O comando avisa que removerá Atendimentos, Lançamentos, Cancelamentos,
+registros de idempotência, sessões, Comandas físicas, Produtos e Usuários
+operacionais. Para prosseguir, é necessário digitar exatamente
+`REINICIALIZAR`; qualquer outra resposta termina sem backup ou alteração no
+banco.
+
+Depois da confirmação, o comando reutiliza `criar_backup` e somente inicia a
+limpeza quando o snapshot foi validado e publicado em `.local/backups/`. Em
+seguida, remove os dados listados e chama `carregar_dados_iniciais` para recriar
+as Comandas `001` a `020`, os Produtos e os Usuários operacionais aprovados no
+Ticket 03.
+
+A limpeza e a recriação acontecem na mesma transação. Se qualquer inserção
+falhar, o rollback restaura integralmente o estado anterior; o backup já
+confirmado permanece disponível para diagnóstico ou recuperação manual.
+
 ## Seleção do usuário operacional
 
 A escolha feita na tela inicial é mantida pela sessão padrão do Django. O
