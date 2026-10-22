@@ -117,6 +117,43 @@ exemplo `migrar_com_backup persistencia 0008`.
 Se o backup falhar, nenhuma migration começa. Se a migration falhar, o backup
 já confirmado permanece disponível e não há tentativa automática de restore.
 
+## Restaurar um backup
+
+A restauração é um procedimento administrativo e não aparece na interface
+operacional. Primeiro, pare completamente a aplicação e confirme que nenhum
+processo web continua aceitando operações. Então escolha explicitamente uma
+cópia publicada e execute, na raiz do projeto:
+
+```powershell
+.venv\Scripts\python.exe manage.py restaurar_backup --arquivo <caminho-do-backup> --confirmar-aplicacao-parada
+```
+
+Sem `--confirmar-aplicacao-parada`, o comando recusa a execução antes de tocar
+nos arquivos. A confirmação é uma responsabilidade operacional: ela não tenta
+substituir a parada real do servidor por um lock interno frágil. Depois de
+fechar sua própria conexão Django, o comando também recusa resíduos `-wal` ou
+`-shm`, que indicam uma condição insegura para a troca.
+
+O backup escolhido é aberto em modo somente leitura e precisa passar por
+`PRAGMA integrity_check`. Arquivos `.incompleto` nunca são aceitos. Antes da
+troca, o banco operacional atual é copiado, validado e publicado em
+`.local/backups/` como
+`restaurante-antes-restauracao-<timestamp UTC>.sqlite3`. O backup escolhido é
+preparado em um arquivo temporário no diretório do banco e publicado
+atomicamente no caminho operacional. O novo banco é reaberto e somente é
+declarado restaurado quando uma segunda verificação de integridade retorna
+`ok`.
+
+Se a publicação falhar, o banco anterior continua no caminho operacional e a
+cópia preservada permanece disponível. Se a verificação posterior falhar, o
+comando tenta recolocar atomicamente o banco anterior; se isso não for seguro,
+informa o caminho da cópia recuperável ao operador. Não copie arquivos `-wal`
+ou `-shm` manualmente.
+
+Depois de uma restauração concluída, reinicie a aplicação antes de voltar a
+aceitar operações. O reinício cria conexões novas e impede que qualquer estado
+em memória ou conexão anterior seja reutilizado com o banco substituído.
+
 ## Backup diário no Windows
 
 O comando diário reutiliza o backup seguro acima e, somente depois do sucesso,
