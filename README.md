@@ -384,6 +384,55 @@ cenário são removidos ao final e não se misturam aos dados ou logs operaciona
 Threads locais simulam os clientes concorrentes; latência de Wi-Fi e o hardware
 reais do restaurante podem produzir tempos diferentes.
 
+## Validar o roteiro completo de demonstração
+
+A validação integrada é deliberadamente separada da suíte rápida e deve ser
+iniciada de forma explícita:
+
+```powershell
+.venv\Scripts\python.exe manage.py validar_roteiro_demonstracao
+```
+
+O comando cria um SQLite exclusivo, aplica as migrations reais e confirma
+`journal_mode=WAL`, `synchronous=FULL` e `PRAGMA integrity_check`. Pelas rotas
+HTTP públicas, percorre seleção de Garçom, primeiro Lançamento, Lançamentos
+adicionais, troca de Garçom, cancelamento, conferência do Caixa, mudança depois
+da conferência, nova confirmação, Fechamento, resumo final, replay idempotente e
+reutilização da Comanda física sem misturar Atendimentos.
+
+O Google Chrome headless é automatizado nas dimensões `390×844` e `1366×768`.
+O relatório informa a versão e a engine realmente usadas, além de deixar claro
+que outro navegador instalado, mas não executado, não foi coberto. A suíte
+pública de comunicação do Ticket 21 comprova perda, resultado incerto e
+recuperação. As suítes públicas de backup seguro, backup diário, backup antes de
+migrations, restauração, reinicialização e durabilidade são coordenadas em
+ambientes isolados, sem reimplementar esses procedimentos.
+
+O resultado fica em `.local/relatorios/roteiro-demonstracao-<timestamp>.json` e
+distingue evidências automatizadas da validação manual. Qualquer etapa
+obrigatória não comprovada encerra o comando com falha.
+
+### Validação manual com leitor físico
+
+1. inicie o servidor pelo procedimento operacional e abra a tela do Garçom em
+   um dispositivo da rede local;
+2. mantenha o foco no campo `Identificador da comanda` e leia o código `001` da
+   folha impressa;
+3. confirme que o leitor escreve exatamente `001`, envia `Enter` e consulta a
+   mesma Comanda física que a digitação manual;
+4. registre um primeiro Lançamento e leia novamente `001`, confirmando que o
+   Atendimento agora aparece em andamento;
+5. no computador do Caixa, leia `001` e confirme que a consolidação corresponde
+   ao que foi lançado;
+6. ao final, registre no relatório operacional a data, o modelo do leitor, os
+   navegadores/dispositivos usados e se cada resultado esperado foi observado.
+
+O resultado esperado é que leitura e teclado acionem o mesmo formulário HTTP,
+preservem zeros à esquerda e não gerem caracteres extras nem submissões
+duplicadas. Essa etapa permanece manual porque depende do leitor, impressão e
+dispositivos físicos reais; o comando automatizado a identifica como manual e
+não declara que ela foi executada.
+
 ## Seleção do usuário operacional
 
 A escolha feita na tela inicial é mantida pela sessão padrão do Django. O

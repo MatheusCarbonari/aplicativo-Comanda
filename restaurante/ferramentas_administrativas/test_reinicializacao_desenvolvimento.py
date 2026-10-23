@@ -421,14 +421,13 @@ class ReinicializarDadosDesenvolvimentoTests(TransactionTestCase):
                 "reinicializacao_desenvolvimento_concluida",
             ],
         )
-        representacao_logs = repr(
-            [
-                (registro.evento, registro.contexto_tecnico)
-                for registro in coletor.registros
-            ]
-        )
-        self.assertNotIn("PRODUTO-SIGILOSO-SENTINELA", representacao_logs)
-        self.assertNotIn("9876", representacao_logs)
+        valores_contexto = [
+            valor
+            for registro in coletor.registros
+            for valor in registro.contexto_tecnico.values()
+        ]
+        self.assertNotIn("PRODUTO-SIGILOSO-SENTINELA", valores_contexto)
+        self.assertNotIn(9876, valores_contexto)
 
     def test_falha_do_logging_nao_altera_reinicializacao_bem_sucedida(self):
         logger = logging.getLogger("restaurante")
