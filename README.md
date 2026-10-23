@@ -13,15 +13,104 @@ py -m venv .venv
 
 Em Linux, os comandos equivalentes usam `python3` e `.venv/bin/python`.
 
-## Iniciar
+## Iniciar na rede local
 
-Depois de instalar as dependências:
+Depois da instalação e da preparação inicial do banco, inicie o servidor com um
+único comando na raiz do projeto:
 
 ```powershell
-.venv\Scripts\python.exe manage.py runserver
+.\scripts\iniciar_servidor.ps1
 ```
 
-A página-base fica disponível em `http://127.0.0.1:8000/`. A exposição controlada à rede local será tratada em um ticket posterior.
+O wrapper localiza a raiz mesmo quando chamado a partir de outro diretório, usa
+exclusivamente `.venv\Scripts\python.exe` e executa o Django em
+`0.0.0.0:8000`, sem autoreload. Ele não executa migration, carga ou reset de
+dados. A saída mostra a URL de loopback, a verificação de saúde e uma URL para
+cada IPv4 local encontrado. Se o Django falhar, o script termina com o mesmo
+código de erro.
+
+No computador servidor, descubra o IPv4 atual com:
+
+```powershell
+ipconfig
+```
+
+Procure o `Endereço IPv4` do adaptador Ethernet ou Wi-Fi usado pela rede local,
+sem usar endereços de loopback ou autoconfiguração `169.254.x.x`. Em outro
+celular ou computador conectado à mesma LAN, abra:
+
+```text
+http://<IPv4-do-servidor>:8000/
+```
+
+O bind `0.0.0.0:8000` recebe conexões IPv4 nas interfaces do servidor; a regra
+de firewall abaixo restringe a entrada ao perfil privado e à sub-rede local.
+Para uma URL previsível, mantenha o IPv4 local estável por **reserva DHCP** no
+roteador ou por configuração administrada do computador. O projeto não altera
+essas configurações automaticamente.
+
+### Firewall do Windows
+
+Primeiro classifique a rede do restaurante como privada. Depois, em um
+PowerShell aberto explicitamente como administrador, crie somente a regra TCP
+necessária para a porta da aplicação:
+
+```powershell
+New-NetFirewallRule -DisplayName "Restaurante-LAN-8000" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8000 -Profile Private -RemoteAddress LocalSubnet
+```
+
+Verifique ou remova a regra, se a instalação deixar de servir a aplicação:
+
+```powershell
+Get-NetFirewallRule -DisplayName "Restaurante-LAN-8000"
+Remove-NetFirewallRule -DisplayName "Restaurante-LAN-8000"
+```
+
+O script de inicialização nunca cria essa regra silenciosamente e nunca
+desabilita o firewall. Use a aplicação somente em **rede local confiável**. Não
+publique a porta na internet, não configure **port forwarding**, não ative
+**UPnP**, túnel ou hospedagem externa. A operação normal não depende de internet
+externa.
+
+### Verificar servidor e persistência
+
+Com o servidor em execução, confirme que o processo responde e que o banco está
+acessível:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/saude/
+```
+
+O resultado esperado é `status: ok`. Em seguida, abra a página principal pelo
+IPv4 da LAN. A interface usa CSS, JavaScript e códigos de barras distribuídos
+com o próprio projeto; não há fonte, biblioteca, asset obrigatório ou **CDN**
+externa.
+
+Os dados operacionais permanecem dentro da instalação, fora de diretórios
+temporários:
+
+- `.local/dados/`: banco SQLite operacional;
+- `.local/backups/`: backups manuais, diários, pré-migração e preservações;
+- `.local/logs/`: log estruturado com rotação.
+
+Esses diretórios não dependem de internet externa. O banco deve permanecer no
+disco local do servidor, nunca em compartilhamento de rede.
+
+### Diferenças mínimas no Linux
+
+No Linux, instale as dependências na `.venv`, use o Python em `.venv/bin/` e
+inicie o mesmo processo a partir da raiz:
+
+```bash
+.venv/bin/python manage.py runserver 0.0.0.0:8000 --noreload
+```
+
+O administrador deve liberar TCP/8000 somente para a sub-rede local confiável
+no firewall disponível, por exemplo com uma regra `ufw` que informe
+explicitamente o CIDR da LAN. O bind, a URL
+`http://<IPv4-do-servidor>:8000/` e os diretórios `.local/dados/`,
+`.local/backups/` e `.local/logs/` permanecem iguais. Este procedimento não
+instala serviço `systemd`.
 
 ## Saúde do backend
 

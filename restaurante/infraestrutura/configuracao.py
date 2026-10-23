@@ -34,7 +34,14 @@ SECRET_KEY = os.environ.get(
     "chave-exclusiva-para-desenvolvimento-local",
 )
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "testserver"]
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get(
+        "DJANGO_ALLOWED_HOSTS",
+        "localhost,127.0.0.1,[::1],testserver",
+    ).split(",")
+    if host.strip()
+]
 
 INSTALLED_APPS = [
     "restaurante.infraestrutura.apps.InfraestruturaConfig",
