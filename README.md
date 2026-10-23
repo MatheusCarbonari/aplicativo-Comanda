@@ -354,6 +354,36 @@ A limpeza e a recriação acontecem na mesma transação. Se qualquer inserção
 falhar, o rollback restaura integralmente o estado anterior; o backup já
 confirmado permanece disponível para diagnóstico ou recuperação manual.
 
+## Validar volume e concorrência
+
+A verificação pesada é executada explicitamente e não faz parte da suíte rápida:
+
+```powershell
+.venv\Scripts\python.exe manage.py validar_volume_concorrencia
+```
+
+O comando cria um banco SQLite temporário exclusivo, aplica as migrations reais,
+confirma `journal_mode=WAL` e `synchronous=FULL` e prepara pelo ORM pelo menos
+10.000 Lançamentos. Em seguida, dez dispositivos simulados, cada um com sua
+própria conexão Django, iniciam de uma barreira comum e exercitam os casos de uso
+públicos de registro de Lançamento adicional, consulta e Fechamento. Uma chave é
+repetida para validar a idempotência sem duplicar o Lançamento.
+
+O resumo no terminal e o JSON criado em `.local/relatorios/` registram data UTC,
+sistema operacional, versões de Python, Django e SQLite, seed, configuração do
+banco, volume, dispositivos, resultados das operações, `SQLITE_BUSY`,
+`SQLITE_LOCKED`, retries e tempos mínimo, mediano, p95 e máximo medidos com
+relógio monotônico. O p95 é comparado informativamente com a meta prática de
+aproximadamente um segundo; uma operação isolada mais lenta não reprova o teste.
+
+A execução falha se encontrar Atendimento aberto duplicado, Total diferente dos
+Lançamentos válidos persistidos, desaparecimento de Lançamento confirmado,
+Lançamento posterior ao Fechamento, duplicação idempotente, Comanda que deveria
+estar disponível ou falha no `PRAGMA integrity_check`. O banco e o log usados no
+cenário são removidos ao final e não se misturam aos dados ou logs operacionais.
+Threads locais simulam os clientes concorrentes; latência de Wi-Fi e o hardware
+reais do restaurante podem produzir tempos diferentes.
+
 ## Seleção do usuário operacional
 
 A escolha feita na tela inicial é mantida pela sessão padrão do Django. O
